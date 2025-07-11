@@ -1,0 +1,61 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022"
+    ],
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./out",
+    "rootDir": "./src",
+    "composite": true,
+    "incremental": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "baseUrl": ".",
+    "paths": {
+      "@docmate/shared/*": [
+        "./packages/shared/src/*"
+      ],
+      "@docmate/core/*": [
+        "./packages/core/src/*"
+      ],
+      "@docmate/ui/*": [
+        "./packages/ui/src/*"
+      ]
+    }
+  },
+  "include": [
+    "packages/*/src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/node_modules",
+    "**/out",
+    "**/dist",
+    "**/test/**/*"
+  ],
+  "references": [
+    {
+      "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/extension"
+    },
+    {
+      "path": "./packages/ui"
+    }
+  ]
+}

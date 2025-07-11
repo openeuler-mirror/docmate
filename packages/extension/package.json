@@ -1,0 +1,34 @@
+{
+  "name": "@docmate/extension",
+  "version": "0.1.0",
+  "description": "VS Code extension for DocMate",
+  "main": "./out/extension.js",
+  "scripts": {
+    "build": "tsc -b",
+    "watch": "tsc -b --watch",
+    "dev": "tsc -b --watch",
+    "clean": "rimraf out *.tsbuildinfo",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit",
+    "test": "node ./out/test/runTest.js",
+    "pretest": "pnpm run build && pnpm run lint"
+  },
+  "dependencies": {
+    "@docmate/shared": "workspace:*",
+    "@docmate/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.10.0",
+    "@types/mocha": "^10.0.6",
+    "@types/glob": "^8.1.0",
+    "@vscode/test-electron": "^2.3.8",
+    "mocha": "^10.2.0",
+    "glob": "^10.3.10",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.3.3"
+  },
+  "files": [
+    "out/**/*"
+  ]
+}

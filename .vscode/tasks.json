@@ -1,0 +1,110 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "watch",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "watch:extension",
+        "watch:ui"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "never",
+        "group": "watchers"
+      },
+      "isBackground": true,
+      "problemMatcher": [
+        {
+          "base": "$tsc-watch",
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "^\\s*\\d{1,2}:\\d{1,2}:\\d{1,2}(?: AM| PM)? - File change detected\\. Starting incremental compilation\\.\\.\\.",
+            "endsPattern": "^\\s*\\d{1,2}:\\d{1,2}:\\d{1,2}(?: AM| PM)? - (?:Found \\d+ errors?\\. Watching for file changes\\.|Compilation complete\\. Watching for file changes\\.)"
+          }
+        }
+      ]
+    },
+    {
+      "label": "watch:extension",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "--filter",
+        "extension",
+        "watch"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "group": "watchers"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "base": "$tsc-watch",
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\s*\\d{1,2}:\\d{1,2}:\\d{1,2}(?: AM| PM)? - File change detected\\. Starting incremental compilation\\.\\.\\.",
+          "endsPattern": "^\\s*\\d{1,2}:\\d{1,2}:\\d{1,2}(?: AM| PM)? - (?:Found \\d+ errors?\\. Watching for file changes\\.|Compilation complete\\. Watching for file changes\\.)"
+        }
+      }
+    },
+    {
+      "label": "watch:ui",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "--filter",
+        "ui",
+        "dev"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "silent",
+        "group": "watchers"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^(.*)$",
+          "file": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*building for production.*$",
+          "endsPattern": "^.*built in.*$"
+        }
+      }
+    },
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "run",
+        "build"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      },
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "clean",
+      "type": "shell",
+      "command": "pnpm",
+      "args": [
+        "run",
+        "clean"
+      ],
+      "group": "build"
+    }
+  ]
+}

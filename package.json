@@ -1,0 +1,136 @@
+{
+  "name": "docmate",
+  "displayName": "DocMate - openEuler Writing Assistant",
+  "description": "AI-powered writing assistant for openEuler documentation with terminology checking, polishing, and translation features",
+  "version": "0.1.0",
+  "publisher": "openeuler",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Education",
+    "Linters"
+  ],
+  "keywords": [
+    "openeuler",
+    "documentation",
+    "writing",
+    "ai",
+    "assistant",
+    "terminology",
+    "translation"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./packages/extension/out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "docmate",
+          "title": "DocMate",
+          "icon": "$(book)"
+        }
+      ]
+    },
+    "views": {
+      "docmate": [
+        {
+          "id": "docmate.sidebar",
+          "name": "DocMate Assistant",
+          "type": "webview",
+          "when": "true"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "docmate.check",
+        "title": "Check Document",
+        "category": "DocMate"
+      },
+      {
+        "command": "docmate.polish",
+        "title": "Polish Text",
+        "category": "DocMate"
+      },
+      {
+        "command": "docmate.translate",
+        "title": "Translate Text",
+        "category": "DocMate"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "docmate.check",
+          "when": "editorHasSelection",
+          "group": "docmate"
+        },
+        {
+          "command": "docmate.polish",
+          "when": "editorHasSelection",
+          "group": "docmate"
+        },
+        {
+          "command": "docmate.translate",
+          "when": "editorHasSelection",
+          "group": "docmate"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "DocMate",
+      "properties": {
+        "docmate.aiService.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for AI service"
+        },
+        "docmate.aiService.endpoint": {
+          "type": "string",
+          "default": "",
+          "description": "API endpoint for AI service"
+        },
+        "docmate.terminology.autoCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically check terminology while typing"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run build",
+    "build": "pnpm run build:extension && pnpm run build:ui",
+    "build:extension": "pnpm --filter extension build",
+    "build:ui": "pnpm --filter ui build",
+    "dev": "pnpm run dev:extension & pnpm run dev:ui",
+    "dev:extension": "pnpm --filter extension dev",
+    "dev:ui": "pnpm --filter ui dev",
+    "watch": "pnpm run watch:extension & pnpm run watch:ui",
+    "watch:extension": "pnpm --filter extension watch",
+    "watch:ui": "pnpm --filter ui watch",
+    "test": "pnpm --filter extension test",
+    "lint": "pnpm -r lint",
+    "type-check": "pnpm -r type-check",
+    "clean": "pnpm -r clean",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "packageManager": "pnpm@8.15.0"
+}
