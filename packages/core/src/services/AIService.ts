@@ -1,12 +1,10 @@
-import { AIServiceConfig, DocMateError, createError } from '@docmate/shared';
+import { AIServiceConfig, DocMateError, createError, ChatMessage, AIResponse } from '@docmate/shared';
+import { configService } from './ConfigService';
 
-export interface AIResponse {
-  content: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+export interface AIGenerateOptions {
+  conversationHistory?: ChatMessage[];
+  temperature?: number;
+  maxTokens?: number;
 }
 
 export class AIService {
@@ -24,22 +22,26 @@ export class AIService {
   }
 
   /**
-   * 生成AI响应
+   * 生成AI响应 - 支持对话历史
    */
-  async generate(prompt: string): Promise<AIResponse> {
-    if (!this.config.apiKey || !this.config.endpoint) {
+  async generate(prompt: string, options: AIGenerateOptions = {}): Promise<AIResponse> {
+    // 优先使用configService的配置，如果没有则使用实例配置
+    const apiKey = configService.getApiKey() || this.config.apiKey;
+    const endpoint = configService.getBaseUrl() || this.config.endpoint;
+
+    if (!apiKey || !endpoint) {
       throw createError(
         'AI_CONFIG_MISSING',
         'AI service configuration is incomplete. Please check API key and endpoint.'
       );
     }
 
-    const maxRetries = this.config.maxRetries || 3;
+    const maxRetries = configService.getMaxRetries() || this.config.maxRetries || 3;
     let lastError: Error | null = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        return await this.makeRequest(prompt);
+        return await this.makeRequest(prompt, options);
       } catch (error) {
         lastError = error as Error;
 
@@ -60,56 +62,93 @@ export class AIService {
   }
 
   /**
-   * 发起HTTP请求
+   * 发起HTTP请求 - 支持对话历史
    */
-  private async makeRequest(prompt: string): Promise<AIResponse> {
+  private async makeRequest(prompt: string, options: AIGenerateOptions = {}): Promise<AIResponse> {
     const controller = new AbortController();
-    const timeout = this.config.timeout || 30000;
+    const timeout = configService.getTimeout() || this.config.timeout || 30000;
+    const apiKey = configService.getApiKey() || this.config.apiKey;
+    const endpoint = configService.getBaseUrl() || this.config.endpoint;
+    const model = configService.getModelName() || this.config.model || 'gpt-3.5-turbo';
 
     const timeoutId = setTimeout(() => {
       controller.abort();
     }, timeout);
 
     try {
-      const response = await fetch(this.config.endpoint, {
+      console.log('AIService: Making request to endpoint:', endpoint);
+      console.log('AIService: Using model:', model);
+      console.log('AIService: API key present:', !!apiKey);
+
+      // 构建消息数组
+      const messages: Array<{ role: string; content: string }> = [];
+
+      // 添加对话历史
+      if (options.conversationHistory) {
+        messages.push(...options.conversationHistory.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        })));
+      }
+
+      // 添加当前prompt（如果不在历史中）
+      if (!options.conversationHistory ||
+          !options.conversationHistory.some(msg => msg.content === prompt && msg.role === 'user')) {
+        messages.push({
+          role: 'user',
+          content: prompt,
+        });
+      }
+
+      console.log('AIService: Sending messages:', messages);
+
+      const requestBody = {
+        model,
+        messages,
+        temperature: options.temperature || 0.7,
+        max_tokens: options.maxTokens || 2000,
+      };
+
+      console.log('AIService: Request body:', requestBody);
+
+      const response = await fetch(endpoint!, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
+          'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model: this.config.model || 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'user',
-              content: prompt,
-            },
-          ],
-          temperature: 0.7,
-          max_tokens: 2000,
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
+
+      console.log('AIService: Response status:', response.status);
+      console.log('AIService: Response headers:', Object.fromEntries(response.headers.entries()));
 
       clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('AIService: HTTP error response:', errorText);
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const data = await response.json() as any;
+      console.log('AIService: Response data:', data);
 
       if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        console.error('AIService: Invalid response format:', data);
         throw new Error('Invalid response format from AI service');
       }
 
+      console.log('AIService: Generated content:', data.choices[0].message.content);
+
       return {
+        success: true,
         content: data.choices[0].message.content,
-        usage: data.usage,
       };
     } catch (error) {
       clearTimeout(timeoutId);
+      console.error('AIService: Request failed:', error);
 
       if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(`Request timeout after ${timeout}ms`);
@@ -130,20 +169,24 @@ export class AIService {
    * 验证配置
    */
   validateConfig(): boolean {
-    return !!(this.config.apiKey && this.config.endpoint);
+    const apiKey = configService.getApiKey() || this.config.apiKey;
+    const endpoint = configService.getBaseUrl() || this.config.endpoint;
+    return !!(apiKey && endpoint);
   }
 
   /**
    * 获取当前配置状态
    */
   getConfigStatus(): { isValid: boolean; missingFields: string[] } {
+    const apiKey = configService.getApiKey() || this.config.apiKey;
+    const endpoint = configService.getBaseUrl() || this.config.endpoint;
     const missingFields: string[] = [];
 
-    if (!this.config.apiKey) {
+    if (!apiKey) {
       missingFields.push('apiKey');
     }
 
-    if (!this.config.endpoint) {
+    if (!endpoint) {
       missingFields.push('endpoint');
     }
 

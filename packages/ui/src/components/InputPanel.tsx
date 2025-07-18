@@ -9,6 +9,8 @@ interface InputPanelProps {
 export function InputPanel({ selectedText, onExecute, disabled }: InputPanelProps) {
   const [inputText, setInputText] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('en-US');
+  const [rewriteInstruction, setRewriteInstruction] = useState('');
+  const [showRewriteInput, setShowRewriteInput] = useState(false);
 
   const currentText = selectedText || inputText;
 
@@ -25,6 +27,16 @@ export function InputPanel({ selectedText, onExecute, disabled }: InputPanelProp
   const handleTranslate = () => {
     if (!currentText.trim()) return;
     onExecute('translate', currentText, { targetLanguage });
+  };
+
+  const handleRewrite = () => {
+    if (!currentText.trim() || !rewriteInstruction.trim()) return;
+    onExecute('rewrite', rewriteInstruction, {
+      originalText: currentText,
+      conversationHistory: []
+    });
+    setRewriteInstruction('');
+    setShowRewriteInput(false);
   };
 
   return (
@@ -108,6 +120,43 @@ export function InputPanel({ selectedText, onExecute, disabled }: InputPanelProp
           >
             🌐 翻译
           </button>
+        </div>
+
+        <div className="rewrite-section">
+          <button
+            className="action-button rewrite-button"
+            onClick={() => setShowRewriteInput(!showRewriteInput)}
+            disabled={disabled || !currentText.trim()}
+            title="对话式改写文本"
+          >
+            💬 改写
+          </button>
+
+          {showRewriteInput && (
+            <div className="rewrite-input-container">
+              <input
+                type="text"
+                className="rewrite-input"
+                value={rewriteInstruction}
+                onChange={(e) => setRewriteInstruction(e.target.value)}
+                placeholder="输入改写指令，例如：让这段文字更简洁、改为更正式的语调..."
+                disabled={disabled}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && rewriteInstruction.trim()) {
+                    handleRewrite();
+                  }
+                }}
+              />
+              <button
+                className="rewrite-send-button"
+                onClick={handleRewrite}
+                disabled={disabled || !rewriteInstruction.trim()}
+                title="发送改写指令"
+              >
+                发送
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

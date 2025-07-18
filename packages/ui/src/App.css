@@ -30,6 +30,32 @@ body {
   background-color: var(--vscode-sideBarSectionHeader-background);
 }
 
+.header-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.view-toggle {
+  padding: 6px 8px;
+  background: none;
+  border: 1px solid var(--vscode-button-border);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--vscode-foreground);
+  transition: all 0.15s ease;
+}
+
+.view-toggle:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.view-toggle.active {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
 .app-header h2 {
   margin: 0;
   font-size: 14px;
@@ -389,6 +415,56 @@ body {
   align-items: center;
 }
 
+.rewrite-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rewrite-input-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background-color: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+}
+
+.rewrite-input {
+  flex: 1;
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  color: var(--vscode-input-foreground);
+  font-size: 12px;
+  outline: none;
+}
+
+.rewrite-input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.rewrite-send-button {
+  padding: 4px 12px;
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: 1px solid var(--vscode-button-border);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background-color 0.15s ease;
+}
+
+.rewrite-send-button:hover:not(:disabled) {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.rewrite-send-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .language-select {
   flex: 1;
   padding: 6px 8px;
@@ -490,4 +566,321 @@ body {
 
 .error-dismiss:hover {
   color: var(--vscode-errorForeground);
+}
+
+/* ===== Diff View 样式 ===== */
+.diff-view {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  margin: 8px 0;
+  background-color: var(--vscode-editor-background);
+  overflow: hidden;
+}
+
+.diff-view.no-changes {
+  border-color: var(--vscode-textBlockQuote-border);
+  background-color: var(--vscode-textBlockQuote-background);
+}
+
+.diff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: var(--vscode-editorGroupHeader-tabsBackground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.diff-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diff-title h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.expand-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: var(--vscode-icon-foreground);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.expand-toggle:hover {
+  background-color: var(--vscode-toolbar-hoverBackground);
+  border-radius: 2px;
+}
+
+.diff-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.stat-insertions {
+  color: var(--vscode-gitDecoration-addedResourceForeground);
+  font-weight: 500;
+}
+
+.stat-deletions {
+  color: var(--vscode-gitDecoration-deletedResourceForeground);
+  font-weight: 500;
+}
+
+.stat-total {
+  color: var(--vscode-descriptionForeground);
+}
+
+.no-changes-text {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.diff-content {
+  padding: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.diff-text {
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-segment {
+  position: relative;
+}
+
+.diff-insert {
+  background-color: var(--vscode-diffEditor-insertedTextBackground);
+  color: var(--vscode-diffEditor-insertedTextForeground, var(--vscode-foreground));
+  border-radius: 2px;
+  padding: 1px 2px;
+}
+
+.diff-delete {
+  background-color: var(--vscode-diffEditor-removedTextBackground);
+  color: var(--vscode-diffEditor-removedTextForeground, var(--vscode-foreground));
+  text-decoration: line-through;
+  border-radius: 2px;
+  padding: 1px 2px;
+}
+
+.diff-equal {
+  /* 保持默认样式 */
+}
+
+.diff-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: var(--vscode-editorWidget-background);
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.btn {
+  padding: 6px 12px;
+  border: 1px solid var(--vscode-button-border);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.btn-accept {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.btn-accept:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.btn-reject {
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.btn-reject:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* ===== Chat View 样式 ===== */
+.chat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--vscode-editor-background);
+}
+
+.chat-header {
+  padding: 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background-color: var(--vscode-editorGroupHeader-tabsBackground);
+}
+
+.chat-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.original-text-preview {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.text-preview {
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+}
+
+.empty-state p {
+  margin: 0 0 16px 0;
+  font-size: 13px;
+}
+
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.suggestion-btn {
+  padding: 8px 16px;
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: 1px solid var(--vscode-button-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.15s ease;
+}
+
+.suggestion-btn:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 85%;
+}
+
+.message.user {
+  align-self: flex-end;
+}
+
+.message.assistant {
+  align-self: flex-start;
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.role {
+  font-weight: 500;
+}
+
+.timestamp {
+  opacity: 0.7;
+}
+
+.message-content {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message.user .message-content {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.message.assistant .message-content {
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+}
+
+.message.loading .message-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.8;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 2px;
+}
+
+.loading-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: var(--vscode-foreground);
+  animation: loading-pulse 1.4s infinite ease-in-out;
+}
+
+.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+.loading-dots span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes loading-pulse {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
+}
+
+.diff-container {
+  margin-top: 8px;
+}
+
+.chat-input {
+  border-top: 1px solid var(--vscode-panel-border);
+  background-color: var(--vscode-editorWidget-background);
 }

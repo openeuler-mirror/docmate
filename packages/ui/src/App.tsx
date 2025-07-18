@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   HostResult,
+  ExtendedHostResult,
   ConversationItem,
   OperationState,
   generateId
@@ -66,16 +67,22 @@ export default function App() {
   /**
    * 处理来自扩展的消息
    */
-  const handleMessage = (message: HostResult) => {
+  const handleMessage = (message: HostResult | ExtendedHostResult) => {
     switch (message.command) {
       case 'renderResult':
-        handleRenderResult(message);
+        handleRenderResult(message as HostResult);
+        break;
+      case 'renderCheckResult':
+      case 'renderPolishResult':
+      case 'renderTranslateResult':
+      case 'renderRewriteResult':
+        handleExtendedResult(message as ExtendedHostResult);
         break;
       case 'error':
-        handleError(message);
+        handleError(message as HostResult);
         break;
       case 'loading':
-        handleLoading(message);
+        handleLoading(message as HostResult);
         break;
       case 'ready':
         handleReady();
@@ -107,6 +114,50 @@ export default function App() {
         timestamp: Date.now(),
         operation: type as any,
         results: data,
+      };
+
+      setState(prev => ({
+        ...prev,
+        conversations: [...prev.conversations, conversationItem],
+        operationState: {
+          ...prev.operationState,
+          isLoading: false,
+          error: undefined,
+          lastOperation: type,
+        },
+      }));
+    }
+  };
+
+  /**
+   * 处理扩展结果（新的diff格式）
+   */
+  const handleExtendedResult = (message: ExtendedHostResult) => {
+    const { type, diffs, issues, sourceLang, targetLang } = message.payload;
+
+    if (type && diffs) {
+      // 创建结果内容
+      let content = `${getOperationName(type)}完成`;
+      if (issues && issues.length > 0) {
+        content += `，发现 ${issues.length} 个问题`;
+      }
+      if (sourceLang && targetLang) {
+        content += `，从 ${sourceLang} 翻译为 ${targetLang}`;
+      }
+
+      // 添加到对话历史
+      const conversationItem: ConversationItem = {
+        id: generateId(),
+        type: 'assistant',
+        content,
+        timestamp: Date.now(),
+        operation: type as any,
+        results: {
+          diffs,
+          issues,
+          sourceLang,
+          targetLang,
+        },
       };
 
       setState(prev => ({
@@ -192,6 +243,16 @@ export default function App() {
       case 'translate':
         vscodeApi.translate(text, options);
         break;
+      case 'rewrite':
+        vscodeApi.postMessage({
+          command: 'rewrite',
+          payload: {
+            text: text,
+            originalText: options?.originalText,
+            conversationHistory: options?.conversationHistory || []
+          }
+        } as any);
+        break;
     }
   };
 
@@ -202,6 +263,20 @@ export default function App() {
     setState(prev => ({
       ...prev,
       conversations: [],
+    }));
+  };
+
+  /**
+   * 清除特定对话的结果
+   */
+  const dismissResult = (conversationId: string) => {
+    setState(prev => ({
+      ...prev,
+      conversations: prev.conversations.map(conv =>
+        conv.id === conversationId
+          ? { ...conv, results: undefined }
+          : conv
+      ),
     }));
   };
 
@@ -262,6 +337,7 @@ export default function App() {
         <ChatWindow
           conversations={state.conversations}
           onClear={clearConversations}
+          onDismissResult={dismissResult}
         />
 
         {state.operationState.isLoading && (
@@ -289,6 +365,8 @@ function getOperationName(operation?: string): string {
       return '润色';
     case 'translate':
       return '翻译';
+    case 'rewrite':
+      return '改写';
     default:
       return '处理';
   }

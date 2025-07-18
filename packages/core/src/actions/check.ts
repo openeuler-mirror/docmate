@@ -1,6 +1,8 @@
-import { CheckResultItem, generateId, createError } from '@docmate/shared';
+import { CheckResultItem, CheckResult, generateId, createError } from '@docmate/shared';
 import { AIService } from '../services/AIService';
 import { TerminologyService } from '../services/TerminologyService';
+import { IAction, ActionExecuteOptions } from './BaseAction';
+import { calculateDiff } from '../utils/diff';
 
 export interface CheckOptions {
   enableTerminology?: boolean;
@@ -10,39 +12,113 @@ export interface CheckOptions {
   strictMode?: boolean;
 }
 
+export class CheckAction implements IAction<CheckResult> {
+  private aiService: AIService;
+  private terminologyService: TerminologyService;
+
+  constructor(aiService: AIService, terminologyService: TerminologyService) {
+    this.aiService = aiService;
+    this.terminologyService = terminologyService;
+  }
+
+  async execute(options: ActionExecuteOptions & { checkOptions?: CheckOptions }): Promise<CheckResult> {
+    const { text, checkOptions = {} } = options;
+
+    if (!text.trim()) {
+      return { diffs: [], issues: [] };
+    }
+
+    const issues: CheckResultItem[] = [];
+
+    try {
+      // 1. 术语检查
+      if (checkOptions.enableTerminology !== false) {
+        const terminologyResults = checkTerminology(text, this.terminologyService);
+        issues.push(...terminologyResults);
+      }
+
+      // 2. AI检查（语法、风格、一致性）
+      if (this.aiService.validateConfig()) {
+        const aiResults = await performAICheck(text, this.aiService, checkOptions);
+        issues.push(...aiResults);
+      }
+
+      // 3. 生成修正后的文本和diff
+      const correctedText = this.applyCorrections(text, issues);
+      const diffs = calculateDiff(text, correctedText);
+
+      // 4. 转换issues格式
+      const formattedIssues = issues.map(issue => ({
+        message: issue.message,
+        suggestion: issue.suggestedText || issue.suggestion || '',
+        range: [issue.range.start, issue.range.end] as [number, number],
+      }));
+
+      return {
+        diffs,
+        issues: formattedIssues,
+      };
+    } catch (error) {
+      throw createError(
+        'CHECK_FAILED',
+        'Failed to perform document check',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * 应用修正建议生成修正后的文本
+   */
+  private applyCorrections(text: string, issues: CheckResultItem[]): string {
+    if (issues.length === 0) {
+      return text;
+    }
+
+    let result = text;
+
+    // 按位置倒序排列，从后往前应用，避免位置偏移
+    const sortedIssues = issues
+      .filter(issue => issue.suggestedText && issue.range.start >= 0 && issue.range.end <= text.length)
+      .sort((a, b) => b.range.start - a.range.start);
+
+    for (const issue of sortedIssues) {
+      if (issue.suggestedText) {
+        result = result.substring(0, issue.range.start) +
+                 issue.suggestedText +
+                 result.substring(issue.range.end);
+      }
+    }
+
+    return result;
+  }
+}
+
+// 保持向后兼容的函数
 export async function execute(
   text: string,
   aiService: AIService,
   terminologyService: TerminologyService,
   options: CheckOptions = {}
 ): Promise<CheckResultItem[]> {
-  if (!text.trim()) {
-    return [];
-  }
+  const action = new CheckAction(aiService, terminologyService);
+  const result = await action.execute({ text, checkOptions: options });
 
-  const results: CheckResultItem[] = [];
-
-  try {
-    // 1. 术语检查
-    if (options.enableTerminology !== false) {
-      const terminologyResults = checkTerminology(text, terminologyService);
-      results.push(...terminologyResults);
-    }
-
-    // 2. AI检查（语法、风格、一致性）
-    if (aiService.validateConfig()) {
-      const aiResults = await performAICheck(text, aiService, options);
-      results.push(...aiResults);
-    }
-
-    return results.sort((a, b) => a.range.start - b.range.start);
-  } catch (error) {
-    throw createError(
-      'CHECK_FAILED',
-      'Failed to perform document check',
-      { originalError: error }
-    );
-  }
+  // 从新格式转换为旧格式以保持兼容性
+  return result.issues.map((issue) => ({
+    id: generateId(),
+    type: 'grammar' as const,
+    severity: 'warning' as const,
+    message: issue.message,
+    suggestion: issue.suggestion,
+    range: {
+      start: issue.range[0],
+      end: issue.range[1],
+    },
+    originalText: text.substring(issue.range[0], issue.range[1]),
+    suggestedText: issue.suggestion,
+    confidence: 0.8,
+  }));
 }
 
 /**

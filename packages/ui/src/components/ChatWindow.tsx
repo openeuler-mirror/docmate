@@ -5,9 +5,10 @@ import { ResultCard } from './ResultCard';
 interface ChatWindowProps {
   conversations: ConversationItem[];
   onClear: () => void;
+  onDismissResult?: (conversationId: string) => void;
 }
 
-export function ChatWindow({ conversations, onClear }: ChatWindowProps) {
+export function ChatWindow({ conversations, onClear, onDismissResult }: ChatWindowProps) {
   return (
     <div className="chat-window">
       <div className="chat-header">
@@ -43,6 +44,7 @@ export function ChatWindow({ conversations, onClear }: ChatWindowProps) {
                 <ResultCard
                   type={conversation.operation!}
                   results={conversation.results}
+                  onDismiss={() => onDismissResult?.(conversation.id)}
                 />
               )}
             </div>

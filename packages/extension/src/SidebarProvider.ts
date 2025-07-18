@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ActionController } from './controllers/ActionController';
-import { UICommand, HostResult, isUICommand } from '@docmate/shared';
+import { UICommand, HostResult, ExtendedUICommand, ExtendedHostResult, isUICommand } from '@docmate/shared';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'docmate.sidebar';
@@ -53,7 +53,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   /**
    * 处理UI命令
    */
-  private async handleUICommand(command: UICommand): Promise<void> {
+  private async handleUICommand(command: UICommand | ExtendedUICommand): Promise<void> {
+    console.log('SidebarProvider: Handling UI command:', command.command, 'with payload:', command.payload);
+
     try {
       // 显示加载状态
       this.sendToWebview({
@@ -62,16 +64,70 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       });
 
       // 执行命令
+      console.log('SidebarProvider: Calling ActionController.handle...');
       const result = await this._actionController.handle(command.command, command.payload);
+      console.log('SidebarProvider: ActionController.handle result:', result);
 
-      // 发送结果
-      this.sendToWebview({
-        command: 'renderResult',
-        payload: {
-          type: command.command as any,
-          data: result
-        }
-      });
+      // 根据命令类型发送不同格式的结果
+      switch (command.command) {
+        case 'check':
+          this.sendToWebview({
+            command: 'renderCheckResult',
+            payload: {
+              type: 'check',
+              diffs: result.diffs,
+              issues: result.issues
+            }
+          } as ExtendedHostResult);
+          break;
+        case 'polish':
+          this.sendToWebview({
+            command: 'renderPolishResult',
+            payload: {
+              type: 'polish',
+              diffs: result.diffs
+            }
+          } as ExtendedHostResult);
+          break;
+        case 'translate':
+          this.sendToWebview({
+            command: 'renderTranslateResult',
+            payload: {
+              type: 'translate',
+              diffs: result.diffs,
+              sourceLang: result.sourceLang,
+              targetLang: result.targetLang
+            }
+          } as ExtendedHostResult);
+          break;
+        case 'rewrite':
+          this.sendToWebview({
+            command: 'renderRewriteResult',
+            payload: {
+              type: 'rewrite',
+              diffs: result.diffs,
+              conversationId: result.conversationId,
+              conversation: command.payload.conversationHistory || []
+            }
+          } as ExtendedHostResult);
+          break;
+        case 'applySuggestion':
+          // applySuggestion命令已经在handleUICommand中执行了，这里只需要发送成功响应
+          this.sendToWebview({
+            command: 'ready',
+            payload: { status: 'applied' }
+          } as HostResult);
+          break;
+        default:
+          // 兼容旧格式
+          this.sendToWebview({
+            command: 'renderResult',
+            payload: {
+              type: command.command as any,
+              data: result
+            }
+          } as HostResult);
+      }
     } catch (error) {
       console.error(`Error executing command ${command.command}:`, error);
       this.sendErrorToWebview(error instanceof Error ? error.message : 'Unknown error');
@@ -87,7 +143,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   /**
    * 发送消息到webview
    */
-  private sendToWebview(message: HostResult): void {
+  private sendToWebview(message: HostResult | ExtendedHostResult): void {
     if (this._view) {
       this._view.webview.postMessage(message);
     }
@@ -116,6 +172,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   public updateConfiguration(): void {
     this._actionController.updateConfiguration();
   }
+
+
 
   /**
    * 更新选中的文本

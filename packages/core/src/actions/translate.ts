@@ -1,5 +1,7 @@
-import { TranslateResultItem, generateId, createError, LANGUAGES } from '@docmate/shared';
+import { TranslateResultItem, TranslateResult, generateId, createError, LANGUAGES } from '@docmate/shared';
 import { AIService } from '../services/AIService';
+import { IAction, ActionExecuteOptions } from './BaseAction';
+import { calculateDiff } from '../utils/diff';
 
 export interface TranslateOptions {
   sourceLanguage?: string;
@@ -9,40 +11,116 @@ export interface TranslateOptions {
   context?: string;
 }
 
+export class TranslateAction implements IAction<TranslateResult> {
+  private aiService: AIService;
+
+  constructor(aiService: AIService) {
+    this.aiService = aiService;
+  }
+
+  async execute(options: ActionExecuteOptions & { translateOptions: TranslateOptions }): Promise<TranslateResult> {
+    const { text, translateOptions } = options;
+
+    if (!text.trim()) {
+      return {
+        diffs: [],
+        sourceLang: translateOptions.sourceLanguage || 'auto',
+        targetLang: translateOptions.targetLanguage
+      };
+    }
+
+    if (!translateOptions.targetLanguage) {
+      throw createError(
+        'TRANSLATE_MISSING_TARGET',
+        'Target language is required for translation'
+      );
+    }
+
+    if (!this.aiService.validateConfig()) {
+      throw createError(
+        'AI_CONFIG_INVALID',
+        'AI service configuration is invalid'
+      );
+    }
+
+    try {
+      const prompt = createTranslatePrompt(text, translateOptions);
+      const response = await this.aiService.generate(prompt);
+
+      if (!response.success) {
+        throw createError(
+          'TRANSLATE_AI_FAILED',
+          response.error?.message || 'AI service failed'
+        );
+      }
+
+      // 提取翻译后的文本
+      const translatedText = this.extractTranslatedText(response.content);
+
+      // 计算diff
+      const diffs = calculateDiff(text, translatedText);
+
+      return {
+        diffs,
+        sourceLang: translateOptions.sourceLanguage || 'auto',
+        targetLang: translateOptions.targetLanguage,
+      };
+    } catch (error) {
+      throw createError(
+        'TRANSLATE_FAILED',
+        'Failed to translate text',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * 从AI响应中提取翻译后的文本
+   */
+  private extractTranslatedText(response: string): string {
+    // 尝试解析JSON格式的响应
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0]);
+        if (data.translatedText) {
+          return data.translatedText;
+        }
+        if (data.translation) {
+          return data.translation;
+        }
+      }
+    } catch (error) {
+      // JSON解析失败，直接返回响应内容
+    }
+
+    // 如果不是JSON格式，直接返回响应内容
+    return response.trim();
+  }
+}
+
+// 保持向后兼容的函数
 export async function execute(
   text: string,
   aiService: AIService,
   options: TranslateOptions
 ): Promise<TranslateResultItem[]> {
-  if (!text.trim()) {
-    return [];
-  }
+  const action = new TranslateAction(aiService);
+  const result = await action.execute({ text, translateOptions: options });
 
-  if (!options.targetLanguage) {
-    throw createError(
-      'TRANSLATE_MISSING_TARGET',
-      'Target language is required for translation'
-    );
-  }
-
-  if (!aiService.validateConfig()) {
-    throw createError(
-      'AI_CONFIG_INVALID',
-      'AI service configuration is invalid'
-    );
-  }
-
-  try {
-    const prompt = createTranslatePrompt(text, options);
-    const response = await aiService.generate(prompt);
-    return parseTranslateResponse(response.content, text, options);
-  } catch (error) {
-    throw createError(
-      'TRANSLATE_FAILED',
-      'Failed to translate text',
-      { originalError: error }
-    );
-  }
+  // 从新格式转换为旧格式以保持兼容性
+  return [{
+    id: generateId(),
+    originalText: text,
+    translatedText: result.diffs.filter(d => d.type !== 'delete').map(d => d.value).join(''),
+    sourceLanguage: result.sourceLang,
+    targetLanguage: result.targetLang,
+    confidence: 0.9,
+    range: {
+      start: 0,
+      end: text.length,
+    },
+  }];
 }
 
 /**
@@ -70,31 +148,11 @@ ${text}
 
 翻译要求：
 1. 保持技术文档的专业性和准确性
-2. ${preserveTerms ? '保持openEuler、Linux、RPM等专业术语不变' : '可以适当本地化专业术语'}
+2. ${preserveTerms ? '保持技术术语不变' : '可以适当本地化专业术语'}
 3. 确保翻译自然流畅
 4. 保持原文的格式和结构
-${includeAlternatives ? '5. 为关键词句提供备选翻译' : ''}
 
-请以JSON格式返回翻译结果，格式如下：
-{
-  "translations": [
-    {
-      "start": 起始位置,
-      "end": 结束位置,
-      "originalText": "原文本",
-      "translatedText": "翻译文本",
-      "sourceLanguage": "源语言代码",
-      "targetLanguage": "目标语言代码",
-      "confidence": 0.0-1.0${includeAlternatives ? ',\n      "alternatives": ["备选翻译1", "备选翻译2"]' : ''}
-    }
-  ]
-}
-
-注意：
-1. 只返回JSON格式，不要包含其他文字
-2. 位置索引从0开始
-3. 置信度范围0.0-1.0
-4. 语言代码使用ISO 639-1标准（如zh-CN, en-US）`;
+请直接返回翻译后的完整文本，不要包含解释或其他内容。`;
 }
 
 /**

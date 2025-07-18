@@ -2,15 +2,24 @@ import { useState } from 'react';
 import {
   CheckResultItem,
   PolishResultItem,
-  TranslateResultItem
+  TranslateResultItem,
+  DiffSegment
 } from '@docmate/shared';
+import DiffView from './DiffView';
+import { vscodeApi } from '../vscodeApi';
 
 interface ResultCardProps {
   type: 'check' | 'polish' | 'translate';
-  results: CheckResultItem[] | PolishResultItem[] | TranslateResultItem[];
+  results: CheckResultItem[] | PolishResultItem[] | TranslateResultItem[] | {
+    diffs?: DiffSegment[];
+    issues?: any[];
+    sourceLang?: string;
+    targetLang?: string;
+  };
+  onDismiss?: () => void;
 }
 
-export function ResultCard({ type, results }: ResultCardProps) {
+export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   const toggleExpanded = (id: string) => {
@@ -22,6 +31,79 @@ export function ResultCard({ type, results }: ResultCardProps) {
     }
     setExpandedItems(newExpanded);
   };
+
+  const getTypeTitle = (type: string) => {
+    switch (type) {
+      case 'check':
+        return '检查结果';
+      case 'polish':
+        return '润色结果';
+      case 'translate':
+        return '翻译结果';
+      default:
+        return '处理结果';
+    }
+  };
+
+  // 检查是否是新的diff格式
+  const isDiffFormat = results && typeof results === 'object' && 'diffs' in results;
+
+  if (isDiffFormat) {
+    const diffResults = results as { diffs?: DiffSegment[]; issues?: any[]; sourceLang?: string; targetLang?: string; };
+
+    const handleAccept = (suggestion: string) => {
+      console.log('ResultCard: handleAccept called with suggestion:', suggestion);
+      console.log('ResultCard: Sending applySuggestion command to extension...');
+
+      try {
+        vscodeApi.postMessage({
+          command: 'applySuggestion',
+          payload: { text: suggestion }
+        } as any);
+        console.log('ResultCard: applySuggestion command sent successfully');
+      } catch (error) {
+        console.error('ResultCard: Failed to send applySuggestion command:', error);
+      }
+    };
+
+    const handleReject = () => {
+      console.log('Suggestion rejected');
+      if (onDismiss) {
+        onDismiss();
+      }
+    };
+
+    return (
+      <div className="result-card">
+        {diffResults.diffs && diffResults.diffs.length > 0 && (
+          <DiffView
+            diffs={diffResults.diffs}
+            onAccept={handleAccept}
+            onReject={handleReject}
+            title={getTypeTitle(type)}
+          />
+        )}
+
+        {diffResults.issues && diffResults.issues.length > 0 && (
+          <div className="issues-section">
+            <h4>发现的问题：</h4>
+            <ul>
+              {diffResults.issues.map((issue, index) => (
+                <li key={index} className="issue-item">
+                  <span className="issue-message">{issue.message}</span>
+                  {issue.suggestion && (
+                    <span className="issue-suggestion">建议：{issue.suggestion}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+
 
   const getSeverityIcon = (severity: string) => {
     switch (severity) {
@@ -194,7 +276,10 @@ export function ResultCard({ type, results }: ResultCardProps) {
     </div>
   );
 
-  if (results.length === 0) {
+  // 处理旧格式的结果
+  const arrayResults = results as CheckResultItem[] | PolishResultItem[] | TranslateResultItem[];
+
+  if (Array.isArray(arrayResults) && arrayResults.length === 0) {
     return (
       <div className="result-card empty">
         <p>没有发现问题或建议。</p>
@@ -204,9 +289,9 @@ export function ResultCard({ type, results }: ResultCardProps) {
 
   return (
     <div className="result-card">
-      {type === 'check' && renderCheckResults(results as CheckResultItem[])}
-      {type === 'polish' && renderPolishResults(results as PolishResultItem[])}
-      {type === 'translate' && renderTranslateResults(results as TranslateResultItem[])}
+      {type === 'check' && renderCheckResults(arrayResults as CheckResultItem[])}
+      {type === 'polish' && renderPolishResults(arrayResults as PolishResultItem[])}
+      {type === 'translate' && renderTranslateResults(arrayResults as TranslateResultItem[])}
     </div>
   );
 }

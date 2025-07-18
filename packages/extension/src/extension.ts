@@ -105,7 +105,47 @@ function registerCommands(context: vscode.ExtensionContext, sidebarProvider: Sid
     });
   });
 
-  context.subscriptions.push(checkCommand, polishCommand, translateCommand);
+  // 改写文本命令
+  const rewriteCommand = vscode.commands.registerCommand('docmate.rewrite', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showWarningMessage('请先打开一个文档');
+      return;
+    }
+
+    const selectedText = editor.document.getText(editor.selection);
+    if (!selectedText.trim()) {
+      vscode.window.showWarningMessage('请先选择要改写的文本');
+      return;
+    }
+
+    // 询问改写指令
+    const instruction = await vscode.window.showInputBox({
+      prompt: '请输入改写指令（例如：让这段文字更简洁、改为更正式的语调等）',
+      placeHolder: '描述您希望如何改写选中的文本...',
+      value: '',
+      validateInput: (value) => {
+        if (!value.trim()) {
+          return '请输入改写指令';
+        }
+        return null;
+      }
+    });
+
+    if (!instruction) {
+      return;
+    }
+
+    // 打开侧边栏并发送改写命令
+    await vscode.commands.executeCommand('docmate.sidebar.focus');
+    await sidebarProvider.executeCommand('rewrite', {
+      text: instruction,
+      originalText: selectedText,
+      conversationHistory: []
+    });
+  });
+
+  context.subscriptions.push(checkCommand, polishCommand, translateCommand, rewriteCommand);
 }
 
 export function deactivate() {

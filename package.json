@@ -60,6 +60,11 @@
         "command": "docmate.translate",
         "title": "Translate Text",
         "category": "DocMate"
+      },
+      {
+        "command": "docmate.rewrite",
+        "title": "Rewrite Text",
+        "category": "DocMate"
       }
     ],
     "menus": {
@@ -79,6 +84,12 @@
           "when": "editorHasSelection",
           "group": "docmate"
         }
+        ,
+        {
+          "command": "docmate.rewrite",
+          "when": "editorHasSelection",
+          "group": "docmate"
+        }
       ]
     },
     "configuration": {
@@ -88,6 +99,16 @@
           "type": "string",
           "default": "",
           "description": "API key for AI service"
+        },
+        "docmate.api.baseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "Base URL for OpenAI-compatible API"
+        },
+        "docmate.api.modelName": {
+          "type": "string", 
+          "default": "gpt-3.5-turbo",
+          "description": "Model name to use"
         },
         "docmate.aiService.endpoint": {
           "type": "string",

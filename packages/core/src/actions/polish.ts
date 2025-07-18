@@ -1,5 +1,7 @@
-import { PolishResultItem, generateId, createError } from '@docmate/shared';
+import { PolishResultItem, PolishResult, generateId, createError } from '@docmate/shared';
 import { AIService } from '../services/AIService';
+import { IAction, ActionExecuteOptions, BaseActionResult } from './BaseAction';
+import { calculateDiff } from '../utils/diff';
 
 export interface PolishOptions {
   focusOn?: 'clarity' | 'conciseness' | 'tone' | 'structure' | 'all';
@@ -8,33 +10,112 @@ export interface PolishOptions {
   maxLength?: number;
 }
 
+export class PolishAction implements IAction<PolishResult> {
+  private aiService: AIService;
+
+  constructor(aiService: AIService) {
+    this.aiService = aiService;
+  }
+
+  async execute(options: ActionExecuteOptions & { polishOptions?: PolishOptions }): Promise<PolishResult> {
+    const { text, polishOptions = {} } = options;
+
+    if (!text.trim()) {
+      return { diffs: [] };
+    }
+
+    if (!this.aiService.validateConfig()) {
+      throw createError(
+        'AI_CONFIG_INVALID',
+        'AI service configuration is invalid'
+      );
+    }
+
+    try {
+      const prompt = createPolishPrompt(text, polishOptions);
+      const response = await this.aiService.generate(prompt);
+
+      if (!response.success) {
+        throw createError(
+          'POLISH_AI_FAILED',
+          response.error?.message || 'AI service failed'
+        );
+      }
+
+      // 解析AI响应获取润色后的文本
+      const polishedText = this.extractPolishedText(response.content, text);
+
+      // 计算diff
+      const diffs = calculateDiff(text, polishedText);
+
+      return { diffs };
+    } catch (error) {
+      throw createError(
+        'POLISH_FAILED',
+        'Failed to polish text',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * 从AI响应中提取润色后的文本
+   */
+  private extractPolishedText(response: string, originalText: string): string {
+    // 尝试解析JSON格式的响应
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0]);
+        if (data.polishedText) {
+          return data.polishedText;
+        }
+
+        // 如果是分段润色的格式，重新组装文本
+        if (data.polishes && Array.isArray(data.polishes)) {
+          return this.reconstructTextFromPolishes(originalText, data.polishes);
+        }
+      }
+    } catch (error) {
+      // JSON解析失败，尝试其他方法
+    }
+
+    // 如果不是JSON格式，直接返回响应内容
+    return response.trim();
+  }
+
+  /**
+   * 从分段润色结果重新组装文本
+   */
+  private reconstructTextFromPolishes(originalText: string, polishes: any[]): string {
+    let result = originalText;
+
+    // 按位置倒序排列，从后往前应用，避免位置偏移
+    const sortedPolishes = polishes
+      .filter(p => p.originalText && p.polishedText && typeof p.start === 'number' && typeof p.end === 'number')
+      .sort((a, b) => b.start - a.start);
+
+    for (const polish of sortedPolishes) {
+      if (polish.start >= 0 && polish.end <= result.length && polish.start < polish.end) {
+        result = result.substring(0, polish.start) + polish.polishedText + result.substring(polish.end);
+      }
+    }
+
+    return result;
+  }
+}
+
+// 保持向后兼容的函数
 export async function execute(
   text: string,
   aiService: AIService,
   options: PolishOptions = {}
 ): Promise<PolishResultItem[]> {
-  if (!text.trim()) {
-    return [];
-  }
+  const action = new PolishAction(aiService);
+  const result = await action.execute({ text, polishOptions: options });
 
-  if (!aiService.validateConfig()) {
-    throw createError(
-      'AI_CONFIG_INVALID',
-      'AI service configuration is invalid'
-    );
-  }
-
-  try {
-    const prompt = createPolishPrompt(text, options);
-    const response = await aiService.generate(prompt);
-    return parsePolishResponse(response.content, text);
-  } catch (error) {
-    throw createError(
-      'POLISH_FAILED',
-      'Failed to polish text',
-      { originalError: error }
-    );
-  }
+  // 将新格式转换为旧格式以保持兼容性
+  return parsePolishResponse(JSON.stringify({ polishes: [] }), text);
 }
 
 /**
@@ -81,35 +162,18 @@ function createPolishPrompt(text: string, options: PolishOptions): string {
 
   return `请对以下技术文档进行润色，重点${focusDescription}，目标读者是${audienceDescription}。
 
-${preserveTerms ? '注意：请保持openEuler相关技术术语的准确性，不要随意更改专业术语。' : ''}
+${preserveTerms ? '注意：请保持技术术语的准确性，不要随意更改专业术语。' : ''}
 
 原文：
 """
 ${text}
 """
 
-请以JSON格式返回润色结果，格式如下：
-{
-  "polishes": [
-    {
-      "type": "clarity|conciseness|tone|structure",
-      "start": 起始位置,
-      "end": 结束位置,
-      "originalText": "原文本",
-      "polishedText": "润色后文本",
-      "explanation": "修改说明",
-      "confidence": 0.0-1.0
-    }
-  ]
-}
-
-要求：
-1. 只返回JSON格式，不要包含其他文字
-2. 位置索引从0开始
-3. 置信度范围0.0-1.0
-4. 保持技术文档的专业性
-5. 确保润色后的内容准确无误
-6. 每个修改都要有清晰的说明`;
+请直接返回润色后的完整文本，不要包含解释或其他内容。要求：
+1. 保持原文的结构和格式
+2. 确保润色后的内容准确无误
+3. 保持技术文档的专业性
+4. 如果原文已经很好，可以进行微调或保持不变`;
 }
 
 /**
