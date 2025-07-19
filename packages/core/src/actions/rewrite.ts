@@ -2,6 +2,7 @@ import { RewriteResult, ChatMessage, generateId, createError } from '@docmate/sh
 import { IExtendedAction, ExtendedActionExecuteOptions, BaseActionResult } from './BaseAction';
 import { AIService } from '../services/AIService';
 import { calculateDiff } from '../utils/diff';
+import { PromptBuilder } from '../prompts';
 
 export interface RewriteOptions {
   instruction?: string;
@@ -44,16 +45,13 @@ export class RewriteAction implements IExtendedAction<RewriteResult> {
 
       const conversationId = this.generateConversationId();
 
-      // 构建系统提示
-      const systemPrompt = this.createSystemPrompt(options);
+      // 构建改写提示
+      const prompt = this.createRewritePrompt(options);
 
-      // 准备对话历史
-      const conversationHistory = this.prepareConversationHistory(options, systemPrompt);
+      console.log('RewriteAction: Calling AI service with prompt:', prompt);
 
-      console.log('RewriteAction: Calling AI service with conversation history:', conversationHistory);
-
-      // 调用AI服务 - 使用与其他功能相同的调用方式
-      const response = await this.aiService.generate(options.text);
+      // 调用AI服务
+      const response = await this.aiService.generate(prompt);
 
       console.log('RewriteAction: AI service response:', response);
 
@@ -98,25 +96,15 @@ export class RewriteAction implements IExtendedAction<RewriteResult> {
   }
 
   /**
-   * 创建系统提示
+   * 创建改写提示
    */
-  private createSystemPrompt(options: RewriteActionOptions): string {
-    const basePrompt = `你是一个专业的文档改写助手。你的任务是根据用户的指令对文本进行改写。
+  private createRewritePrompt(options: RewriteActionOptions): string {
+    const originalText = options.originalText || '';
+    const userInstruction = options.text;
 
-改写要求：
-1. 保持原文的核心意思和重要信息
-2. 根据用户的具体指令进行调整
-3. 确保改写后的文本流畅、准确、易读
-4. 如果用户没有特殊要求，保持原文的格式和结构
-5. 对于技术文档，保持专业术语的准确性
-
-请直接返回改写后的文本，不要包含解释或其他内容。`;
-
-    if (options.preserveTerminology) {
-      return basePrompt + '\n\n特别注意：请保持技术术语的准确性，不要随意更改专业术语。';
-    }
-
-    return basePrompt;
+    return PromptBuilder.buildRewritePrompt(originalText, userInstruction, {
+      preserveTerminology: options.preserveTerminology
+    });
   }
 
   /**

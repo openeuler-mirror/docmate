@@ -136,12 +136,14 @@ export interface ConversationItem {
   type: 'user' | 'assistant';
   content: string;
   timestamp: number;
-  operation?: 'check' | 'polish' | 'translate';
+  operation?: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
   results?: CheckResultItem[] | PolishResultItem[] | TranslateResultItem[] | {
     diffs?: DiffSegment[];
     issues?: any[];
     sourceLang?: string;
     targetLang?: string;
+    message?: string;
+    success?: boolean;
   };
 }
 
@@ -255,6 +257,17 @@ export interface TranslateResult {
 }
 
 /**
+ * 全文翻译结果（新版本）
+ */
+export interface FullTranslateResult {
+  translatedText: string;
+  sourceLang: string;
+  targetLang: string;
+  originalFileName?: string;
+  suggestedFileName?: string;
+}
+
+/**
  * Rewrite Action 的具体结果，包含完整的对话历史。
  */
 export interface RewriteResult {
@@ -275,7 +288,7 @@ export interface ChatMessage {
  * 扩展的UI命令接口，支持新的rewrite和applySuggestion命令
  */
 export interface ExtendedUICommand extends BaseCommand {
-  command: 'check' | 'polish' | 'translate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings';
+  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings';
   payload: {
     text?: string;
     options?: Record<string, any>;
@@ -290,7 +303,7 @@ export interface ExtendedUICommand extends BaseCommand {
 export interface ExtendedHostResult extends BaseCommand {
   command: 'renderCheckResult' | 'renderPolishResult' | 'renderTranslateResult' | 'renderRewriteResult' | 'error' | 'loading' | 'ready';
   payload: {
-    type?: 'check' | 'polish' | 'translate' | 'rewrite';
+    type?: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
     diffs?: DiffSegment[];
     issues?: any[];
     sourceLang?: string;
@@ -299,5 +312,8 @@ export interface ExtendedHostResult extends BaseCommand {
     conversation?: ChatMessage[];
     error?: string;
     loading?: boolean;
+    message?: string;
+    suggestedFileName?: string;
+    success?: boolean;
   };
 }

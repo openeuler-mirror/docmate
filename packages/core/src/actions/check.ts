@@ -3,6 +3,7 @@ import { AIService } from '../services/AIService';
 import { TerminologyService } from '../services/TerminologyService';
 import { IAction, ActionExecuteOptions } from './BaseAction';
 import { calculateDiff } from '../utils/diff';
+import { PromptBuilder } from '../prompts';
 
 export interface CheckOptions {
   enableTerminology?: boolean;
@@ -31,6 +32,8 @@ export class CheckAction implements IAction<CheckResult> {
     const issues: CheckResultItem[] = [];
 
     try {
+      let aiCorrectedText: string | undefined;
+
       // 1. 术语检查
       if (checkOptions.enableTerminology !== false) {
         const terminologyResults = checkTerminology(text, this.terminologyService);
@@ -40,11 +43,13 @@ export class CheckAction implements IAction<CheckResult> {
       // 2. AI检查（语法、风格、一致性）
       if (this.aiService.validateConfig()) {
         const aiResults = await performAICheck(text, this.aiService, checkOptions);
-        issues.push(...aiResults);
+        issues.push(...aiResults.issues);
+        aiCorrectedText = aiResults.correctedText;
       }
 
       // 3. 生成修正后的文本和diff
-      const correctedText = this.applyCorrections(text, issues);
+      // 优先使用AI提供的完整修正文本，否则使用逐个应用修正的方式
+      const correctedText = aiCorrectedText || this.applyCorrections(text, issues);
       const diffs = calculateDiff(text, correctedText);
 
       // 4. 转换issues格式
@@ -161,33 +166,33 @@ async function performAICheck(
   text: string,
   aiService: AIService,
   options: CheckOptions
-): Promise<CheckResultItem[]> {
+): Promise<{ issues: CheckResultItem[], correctedText?: string }> {
   const checkTypes: string[] = [];
-  
+
   if (options.enableGrammar !== false) {
     checkTypes.push('语法错误');
   }
-  
+
   if (options.enableStyle !== false) {
     checkTypes.push('写作风格');
   }
-  
+
   if (options.enableConsistency !== false) {
     checkTypes.push('内容一致性');
   }
 
   if (checkTypes.length === 0) {
-    return [];
+    return { issues: [] };
   }
 
   const prompt = createCheckPrompt(text, checkTypes, options.strictMode);
-  
+
   try {
     const response = await aiService.generate(prompt);
     return parseAICheckResponse(response.content, text);
   } catch (error) {
     console.warn('AI check failed:', error);
-    return [];
+    return { issues: [] };
   }
 }
 
@@ -195,57 +200,29 @@ async function performAICheck(
  * 创建检查提示词
  */
 function createCheckPrompt(text: string, checkTypes: string[], strictMode = false): string {
-  const strictnessLevel = strictMode ? '严格' : '标准';
-  
-  return `请对以下技术文档进行${strictnessLevel}级别的检查，重点关注：${checkTypes.join('、')}。
-
-文档内容：
-"""
-${text}
-"""
-
-请以JSON格式返回检查结果，格式如下：
-{
-  "issues": [
-    {
-      "type": "grammar|style|consistency",
-      "severity": "error|warning|info",
-      "message": "问题描述",
-      "suggestion": "修改建议",
-      "start": 起始位置,
-      "end": 结束位置,
-      "originalText": "原文本",
-      "suggestedText": "建议文本",
-      "confidence": 0.0-1.0
-    }
-  ]
-}
-
-注意：
-1. 只返回JSON格式，不要包含其他文字
-2. 位置索引从0开始
-3. 置信度范围0.0-1.0
-4. 针对技术文档的特点进行检查
-5. 重点关注openEuler相关术语的正确使用`;
+  return PromptBuilder.buildCheckPrompt(text, {
+    checkTypes,
+    strictMode
+  });
 }
 
 /**
  * 解析AI检查响应
  */
-function parseAICheckResponse(response: string, originalText: string): CheckResultItem[] {
+function parseAICheckResponse(response: string, originalText: string): { issues: CheckResultItem[], correctedText?: string } {
   try {
     // 提取JSON部分
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.warn('No JSON found in AI response');
-      return [];
+      return { issues: [] };
     }
 
     const data = JSON.parse(jsonMatch[0]);
-    
+
     if (!data.issues || !Array.isArray(data.issues)) {
       console.warn('Invalid AI response format');
-      return [];
+      return { issues: [] };
     }
 
     const results: CheckResultItem[] = [];
@@ -278,10 +255,13 @@ function parseAICheckResponse(response: string, originalText: string): CheckResu
       });
     }
 
-    return results;
+    return {
+      issues: results,
+      correctedText: data.correctedText || undefined
+    };
   } catch (error) {
     console.warn('Failed to parse AI check response:', error);
-    return [];
+    return { issues: [] };
   }
 }
 

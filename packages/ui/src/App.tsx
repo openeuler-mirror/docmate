@@ -133,43 +133,77 @@ export default function App() {
    * 处理扩展结果（新的diff格式）
    */
   const handleExtendedResult = (message: ExtendedHostResult) => {
-    const { type, diffs, issues, sourceLang, targetLang } = message.payload;
+    const { type, diffs, issues, sourceLang, targetLang, message: resultMessage, success } = message.payload;
 
-    if (type && diffs) {
-      // 创建结果内容
-      let content = `${getOperationName(type)}完成`;
-      if (issues && issues.length > 0) {
-        content += `，发现 ${issues.length} 个问题`;
+    if (type) {
+      // 处理fullTranslate的特殊情况
+      if (type === 'fullTranslate') {
+        const content = resultMessage || `${getOperationName(type)}完成`;
+
+        const conversationItem: ConversationItem = {
+          id: generateId(),
+          type: 'assistant',
+          content,
+          timestamp: Date.now(),
+          operation: type as any,
+          results: {
+            message: resultMessage,
+            success,
+            sourceLang,
+            targetLang,
+          },
+        };
+
+        setState(prev => ({
+          ...prev,
+          conversations: [...prev.conversations, conversationItem],
+          operationState: {
+            ...prev.operationState,
+            isLoading: false,
+            error: undefined,
+            lastOperation: type,
+          },
+        }));
+        return;
       }
-      if (sourceLang && targetLang) {
-        content += `，从 ${sourceLang} 翻译为 ${targetLang}`;
+
+      // 处理其他有diffs的情况
+      if (diffs) {
+        // 创建结果内容
+        let content = `${getOperationName(type)}完成`;
+        if (issues && issues.length > 0) {
+          content += `，发现 ${issues.length} 个问题`;
+        }
+        if (sourceLang && targetLang) {
+          content += `，从 ${sourceLang} 翻译为 ${targetLang}`;
+        }
+
+        // 添加到对话历史
+        const conversationItem: ConversationItem = {
+          id: generateId(),
+          type: 'assistant',
+          content,
+          timestamp: Date.now(),
+          operation: type as any,
+          results: {
+            diffs,
+            issues,
+            sourceLang,
+            targetLang,
+          },
+        };
+
+        setState(prev => ({
+          ...prev,
+          conversations: [...prev.conversations, conversationItem],
+          operationState: {
+            ...prev.operationState,
+            isLoading: false,
+            error: undefined,
+            lastOperation: type,
+          },
+        }));
       }
-
-      // 添加到对话历史
-      const conversationItem: ConversationItem = {
-        id: generateId(),
-        type: 'assistant',
-        content,
-        timestamp: Date.now(),
-        operation: type as any,
-        results: {
-          diffs,
-          issues,
-          sourceLang,
-          targetLang,
-        },
-      };
-
-      setState(prev => ({
-        ...prev,
-        conversations: [...prev.conversations, conversationItem],
-        operationState: {
-          ...prev.operationState,
-          isLoading: false,
-          error: undefined,
-          lastOperation: type,
-        },
-      }));
     }
   };
 
@@ -242,6 +276,15 @@ export default function App() {
         break;
       case 'translate':
         vscodeApi.translate(text, options);
+        break;
+      case 'fullTranslate':
+        vscodeApi.postMessage({
+          command: 'fullTranslate',
+          payload: {
+            text: text,
+            options: options
+          }
+        } as any);
         break;
       case 'rewrite':
         vscodeApi.postMessage({
@@ -365,6 +408,8 @@ function getOperationName(operation?: string): string {
       return '润色';
     case 'translate':
       return '翻译';
+    case 'fullTranslate':
+      return '全文翻译';
     case 'rewrite':
       return '改写';
     default:

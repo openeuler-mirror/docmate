@@ -17,15 +17,16 @@ interface DiffStats {
   totalChanges: number;
 }
 
-const DiffView: React.FC<DiffViewProps> = ({ 
-  diffs, 
-  onAccept, 
-  onReject, 
+const DiffView: React.FC<DiffViewProps> = ({
+  diffs,
+  onAccept,
+  onReject,
   title = "修改建议",
   showStats = true,
   className = ""
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // 计算diff统计信息
   const stats: DiffStats = useMemo(() => {
@@ -125,16 +126,27 @@ const DiffView: React.FC<DiffViewProps> = ({
           </div>
 
           <div className="diff-actions">
-            <button 
-              className="btn btn-accept"
-              onClick={() => onAccept(suggestionText)}
+            <button
+              className={`btn btn-accept ${isProcessing ? 'processing' : ''}`}
+              onClick={() => {
+                if (!isProcessing) {
+                  setIsProcessing(true);
+                  onAccept(suggestionText);
+                }
+              }}
+              disabled={isProcessing}
               title="接受此修改建议"
             >
-              ✓ 接受
+              {isProcessing ? '⏳ 应用中...' : '✓ 接受'}
             </button>
-            <button 
+            <button
               className="btn btn-reject"
-              onClick={onReject}
+              onClick={() => {
+                if (!isProcessing) {
+                  onReject();
+                }
+              }}
+              disabled={isProcessing}
               title="拒绝此修改建议"
             >
               ✗ 拒绝

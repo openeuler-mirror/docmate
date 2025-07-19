@@ -35,6 +35,13 @@ export interface IAction<T extends BaseActionResult> {
 }
 
 /**
+ * 通用Action接口，不限制返回类型
+ */
+export interface IGenericAction<T> {
+  execute(options: ActionExecuteOptions): Promise<T>;
+}
+
+/**
  * 扩展Action接口，支持对话历史
  */
 export interface IExtendedAction<T extends BaseActionResult> {

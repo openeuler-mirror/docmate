@@ -9,10 +9,17 @@ interface InputPanelProps {
 export function InputPanel({ selectedText, onExecute, disabled }: InputPanelProps) {
   const [inputText, setInputText] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('en-US');
-  const [rewriteInstruction, setRewriteInstruction] = useState('');
-  const [showRewriteInput, setShowRewriteInput] = useState(false);
 
-  const currentText = selectedText || inputText;
+  // 判断是否有选中文本
+  const hasSelectedText = selectedText && selectedText.trim().length > 0;
+  const currentText = hasSelectedText ? selectedText : inputText;
+
+  // 生成选中文本的引用显示
+  const getSelectedTextReference = () => {
+    if (!hasSelectedText) return '';
+    const preview = selectedText.length > 50 ? selectedText.substring(0, 50) + '...' : selectedText;
+    return `> ${preview}`;
+  };
 
   const handleCheck = () => {
     if (!currentText.trim()) return;
@@ -26,138 +33,125 @@ export function InputPanel({ selectedText, onExecute, disabled }: InputPanelProp
 
   const handleTranslate = () => {
     if (!currentText.trim()) return;
-    onExecute('translate', currentText, { targetLanguage });
+    // 如果有选中文本，使用普通翻译；如果是全文，使用fullTranslate（会新建文档）
+    const command = hasSelectedText ? 'translate' : 'fullTranslate';
+    onExecute(command, currentText, { targetLanguage });
   };
 
-  const handleRewrite = () => {
-    if (!currentText.trim() || !rewriteInstruction.trim()) return;
-    onExecute('rewrite', rewriteInstruction, {
-      originalText: currentText,
-      conversationHistory: []
-    });
-    setRewriteInstruction('');
-    setShowRewriteInput(false);
+  const handleSubmit = () => {
+    if (!inputText.trim()) return;
+
+    if (hasSelectedText) {
+      // 有选中文本时，将输入作为改写指令
+      onExecute('rewrite', inputText, {
+        originalText: selectedText,
+        conversationHistory: []
+      });
+    } else {
+      // 没有选中文本时，将输入作为要处理的文本
+      // 这种情况下用户应该使用上面的按钮
+      return;
+    }
+
+    setInputText('');
   };
 
   return (
     <div className="input-panel">
-      <div className="text-input-section">
-        <div className="input-header">
-          <span>📝 输入文本</span>
-          {selectedText && (
-            <span className="selected-indicator">
-              ✅ 已选择编辑器中的文本
-            </span>
-          )}
+      {/* 选中文本引用显示 */}
+      {hasSelectedText && (
+        <div className="selected-text-reference" title={selectedText}>
+          <div className="reference-label">📄 选中文本引用：</div>
+          <div className="reference-content">{getSelectedTextReference()}</div>
         </div>
+      )}
 
-        {selectedText ? (
-          <div className="selected-text-display">
-            <div className="selected-text-content">
-              {selectedText}
-            </div>
-            <button
-              className="clear-selection"
-              onClick={() => setInputText(selectedText)}
-              title="编辑此文本"
-            >
-              ✏️ 编辑
-            </button>
-          </div>
-        ) : (
+      {/* 统一输入框 */}
+      <div className="unified-input-section">
+        <div className="input-container">
           <textarea
-            className="text-input"
+            className="unified-input"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="在此输入要处理的文本，或在编辑器中选择文本..."
-            rows={4}
+            placeholder={
+              hasSelectedText
+                ? "输入改写指令，例如：让这段文字更简洁、改为更正式的语调..."
+                : "输入要处理的文本，或在编辑器中选择文本后输入改写指令..."
+            }
             disabled={disabled}
+            rows={hasSelectedText ? 2 : 4}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && inputText.trim()) {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
           />
-        )}
+          {hasSelectedText && (
+            <button
+              className="submit-button"
+              onClick={handleSubmit}
+              disabled={disabled || !inputText.trim()}
+              title="发送改写指令"
+            >
+              💬 改写
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="action-buttons">
-        <button
-          className="action-button check-button"
-          onClick={handleCheck}
-          disabled={disabled || !currentText.trim()}
-          title="检查文档中的术语、语法和风格问题"
-        >
-          🔍 检查
-        </button>
+        {/* 主要操作按钮 */}
+        <div className="primary-actions">
+          <button
+            className="action-button check-button"
+            onClick={handleCheck}
+            disabled={disabled || !currentText.trim()}
+            title={hasSelectedText ? "检查选中文本的术语、语法和风格问题" : "检查输入文本的术语、语法和风格问题"}
+          >
+            🔍 {hasSelectedText ? '检查选中' : '检查文本'}
+          </button>
 
-        <button
-          className="action-button polish-button"
-          onClick={handlePolish}
-          disabled={disabled || !currentText.trim()}
-          title="润色文本，提高表达质量"
-        >
-          ✨ 润色
-        </button>
+          <button
+            className="action-button polish-button"
+            onClick={handlePolish}
+            disabled={disabled || !currentText.trim()}
+            title={hasSelectedText ? "润色选中文本，提高表达质量" : "润色输入文本，提高表达质量"}
+          >
+            ✨ {hasSelectedText ? '润色选中' : '润色文本'}
+          </button>
 
-        <div className="translate-section">
+          <button
+            className="action-button translate-button"
+            onClick={handleTranslate}
+            disabled={disabled || !currentText.trim()}
+            title={hasSelectedText ? "翻译选中文本" : "翻译输入文本并新建文档"}
+          >
+            🌐 {hasSelectedText ? '翻译选中' : '翻译文本'}
+          </button>
+        </div>
+
+        {/* 翻译语言选择 */}
+        <div className="translate-options">
+          <label className="language-label">翻译目标语言：</label>
           <select
             className="language-select"
             value={targetLanguage}
             onChange={(e) => setTargetLanguage(e.target.value)}
             disabled={disabled}
           >
-            <option value="en-US">English</option>
-            <option value="zh-CN">中文</option>
-            <option value="ja">日语</option>
-            <option value="ko">韩语</option>
-            <option value="fr">法语</option>
-            <option value="de">德语</option>
-            <option value="es">西班牙语</option>
-            <option value="ru">俄语</option>
+            <option value="en-US">🇺🇸 English</option>
+            <option value="zh-CN">🇨🇳 中文</option>
+            <option value="ja">🇯🇵 日语</option>
+            <option value="ko">🇰🇷 韩语</option>
+            <option value="fr">🇫🇷 法语</option>
+            <option value="de">🇩🇪 德语</option>
+            <option value="es">🇪🇸 西班牙语</option>
+            <option value="ru">🇷🇺 俄语</option>
           </select>
-
-          <button
-            className="action-button translate-button"
-            onClick={handleTranslate}
-            disabled={disabled || !currentText.trim()}
-            title="翻译文本到指定语言"
-          >
-            🌐 翻译
-          </button>
         </div>
 
-        <div className="rewrite-section">
-          <button
-            className="action-button rewrite-button"
-            onClick={() => setShowRewriteInput(!showRewriteInput)}
-            disabled={disabled || !currentText.trim()}
-            title="对话式改写文本"
-          >
-            💬 改写
-          </button>
 
-          {showRewriteInput && (
-            <div className="rewrite-input-container">
-              <input
-                type="text"
-                className="rewrite-input"
-                value={rewriteInstruction}
-                onChange={(e) => setRewriteInstruction(e.target.value)}
-                placeholder="输入改写指令，例如：让这段文字更简洁、改为更正式的语调..."
-                disabled={disabled}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && rewriteInstruction.trim()) {
-                    handleRewrite();
-                  }
-                }}
-              />
-              <button
-                className="rewrite-send-button"
-                onClick={handleRewrite}
-                disabled={disabled || !rewriteInstruction.trim()}
-                title="发送改写指令"
-              >
-                发送
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
       <div className="tips">

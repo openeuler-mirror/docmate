@@ -2,6 +2,7 @@ import { PolishResultItem, PolishResult, generateId, createError } from '@docmat
 import { AIService } from '../services/AIService';
 import { IAction, ActionExecuteOptions, BaseActionResult } from './BaseAction';
 import { calculateDiff } from '../utils/diff';
+import { PromptBuilder } from '../prompts';
 
 export interface PolishOptions {
   focusOn?: 'clarity' | 'conciseness' | 'tone' | 'structure' | 'all';
@@ -122,58 +123,11 @@ export async function execute(
  * 创建润色提示词
  */
 function createPolishPrompt(text: string, options: PolishOptions): string {
-  const focusArea = options.focusOn || 'all';
-  const audience = options.targetAudience || 'technical';
-  const preserveTerms = options.preserveTerminology !== false;
-
-  let focusDescription = '';
-  switch (focusArea) {
-    case 'clarity':
-      focusDescription = '提高表达的清晰度和准确性';
-      break;
-    case 'conciseness':
-      focusDescription = '使表达更加简洁明了';
-      break;
-    case 'tone':
-      focusDescription = '调整语调和表达方式';
-      break;
-    case 'structure':
-      focusDescription = '优化文档结构和逻辑';
-      break;
-    default:
-      focusDescription = '全面提升文档质量';
-  }
-
-  let audienceDescription = '';
-  switch (audience) {
-    case 'technical':
-      audienceDescription = '技术人员';
-      break;
-    case 'general':
-      audienceDescription = '一般用户';
-      break;
-    case 'beginner':
-      audienceDescription = '初学者';
-      break;
-    case 'expert':
-      audienceDescription = '专家用户';
-      break;
-  }
-
-  return `请对以下技术文档进行润色，重点${focusDescription}，目标读者是${audienceDescription}。
-
-${preserveTerms ? '注意：请保持技术术语的准确性，不要随意更改专业术语。' : ''}
-
-原文：
-"""
-${text}
-"""
-
-请直接返回润色后的完整文本，不要包含解释或其他内容。要求：
-1. 保持原文的结构和格式
-2. 确保润色后的内容准确无误
-3. 保持技术文档的专业性
-4. 如果原文已经很好，可以进行微调或保持不变`;
+  return PromptBuilder.buildPolishPrompt(text, {
+    focusOn: options.focusOn,
+    targetAudience: options.targetAudience,
+    preserveTerminology: options.preserveTerminology
+  });
 }
 
 /**

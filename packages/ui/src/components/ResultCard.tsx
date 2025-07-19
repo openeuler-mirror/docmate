@@ -9,12 +9,14 @@ import DiffView from './DiffView';
 import { vscodeApi } from '../vscodeApi';
 
 interface ResultCardProps {
-  type: 'check' | 'polish' | 'translate';
+  type: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
   results: CheckResultItem[] | PolishResultItem[] | TranslateResultItem[] | {
     diffs?: DiffSegment[];
     issues?: any[];
     sourceLang?: string;
     targetLang?: string;
+    message?: string;
+    success?: boolean;
   };
   onDismiss?: () => void;
 }
@@ -61,6 +63,11 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
           payload: { text: suggestion }
         } as any);
         console.log('ResultCard: applySuggestion command sent successfully');
+
+        // 接受建议后，隐藏结果卡片
+        if (onDismiss) {
+          onDismiss();
+        }
       } catch (error) {
         console.error('ResultCard: Failed to send applySuggestion command:', error);
       }

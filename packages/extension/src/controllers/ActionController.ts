@@ -5,6 +5,7 @@ import {
   CheckActionClass as CheckAction,
   PolishActionClass as PolishAction,
   TranslateActionClass as TranslateAction,
+  FullTranslateActionClass as FullTranslateAction,
   RewriteActionClass as RewriteAction,
   configService
 } from '@docmate/core';
@@ -16,6 +17,7 @@ import {
   CheckResult,
   PolishResult,
   TranslateResult,
+  FullTranslateResult,
   RewriteResult,
   ChatMessage,
   createError
@@ -54,6 +56,10 @@ export class ActionController {
         case 'translate':
           console.log('ActionController: Executing translate command');
           result = await this.handleTranslate(payload);
+          break;
+        case 'fullTranslate':
+          console.log('ActionController: Executing fullTranslate command');
+          result = await this.handleFullTranslate(payload);
           break;
         case 'rewrite':
           console.log('ActionController: Executing rewrite command');
@@ -127,6 +133,28 @@ export class ActionController {
 
     const action = new TranslateAction(this.aiService);
     return action.execute({ text, translateOptions: options });
+  }
+
+  /**
+   * 处理全文翻译命令 - 返回完整翻译文本，不使用diff格式
+   */
+  private async handleFullTranslate(payload: any): Promise<FullTranslateResult> {
+    const { text, options = {}, fileName } = payload;
+
+    if (!text || typeof text !== 'string') {
+      throw createError('INVALID_TEXT', 'Text is required for translate operation');
+    }
+
+    if (!options.targetLanguage) {
+      throw createError('MISSING_TARGET_LANGUAGE', 'Target language is required for translation');
+    }
+
+    const action = new FullTranslateAction(this.aiService);
+    return action.execute({
+      text,
+      translateOptions: options,
+      fileName: fileName || this.getCurrentFileName()
+    });
   }
 
   /**
@@ -321,6 +349,19 @@ export class ActionController {
       timeout: newConfig.timeout,
       maxRetries: newConfig.maxRetries,
     });
+  }
+
+  /**
+   * 获取当前文件名
+   */
+  private getCurrentFileName(): string | undefined {
+    const editor = vscode.window.activeTextEditor;
+    if (editor && editor.document.fileName) {
+      const path = editor.document.fileName;
+      const fileName = path.split(/[/\\]/).pop();
+      return fileName;
+    }
+    return undefined;
   }
 
   /**

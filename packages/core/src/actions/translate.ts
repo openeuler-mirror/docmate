@@ -1,7 +1,8 @@
-import { TranslateResultItem, TranslateResult, generateId, createError, LANGUAGES } from '@docmate/shared';
+import { TranslateResultItem, TranslateResult, FullTranslateResult, generateId, createError, LANGUAGES } from '@docmate/shared';
 import { AIService } from '../services/AIService';
-import { IAction, ActionExecuteOptions } from './BaseAction';
+import { IAction, IGenericAction, ActionExecuteOptions } from './BaseAction';
 import { calculateDiff } from '../utils/diff';
+import { PromptBuilder } from '../prompts';
 
 export interface TranslateOptions {
   sourceLanguage?: string;
@@ -127,32 +128,12 @@ export async function execute(
  * 创建翻译提示词
  */
 function createTranslatePrompt(text: string, options: TranslateOptions): string {
-  const sourceLanguage = options.sourceLanguage || 'auto-detect';
-  const targetLanguage = getLanguageName(options.targetLanguage);
-  const preserveTerms = options.preserveTerminology !== false;
-  const includeAlternatives = options.includeAlternatives === true;
-  const context = options.context || '';
-
-  let contextSection = '';
-  if (context) {
-    contextSection = `\n上下文信息：${context}\n`;
-  }
-
-  return `请将以下技术文档从${sourceLanguage === 'auto-detect' ? '源语言' : getLanguageName(sourceLanguage)}翻译为${targetLanguage}。
-
-${contextSection}
-原文：
-"""
-${text}
-"""
-
-翻译要求：
-1. 保持技术文档的专业性和准确性
-2. ${preserveTerms ? '保持技术术语不变' : '可以适当本地化专业术语'}
-3. 确保翻译自然流畅
-4. 保持原文的格式和结构
-
-请直接返回翻译后的完整文本，不要包含解释或其他内容。`;
+  return PromptBuilder.buildTranslatePrompt(text, {
+    sourceLanguage: options.sourceLanguage,
+    targetLanguage: options.targetLanguage,
+    preserveTerminology: options.preserveTerminology,
+    context: options.context
+  });
 }
 
 /**
@@ -329,5 +310,134 @@ ${text.substring(0, 200)}
   } catch (error) {
     console.warn('Language detection failed:', error);
     return 'unknown';
+  }
+}
+
+/**
+ * 全文翻译Action - 不使用diff格式，直接返回翻译文本
+ */
+export class FullTranslateAction implements IGenericAction<FullTranslateResult> {
+  private aiService: AIService;
+
+  constructor(aiService: AIService) {
+    this.aiService = aiService;
+  }
+
+  async execute(options: ActionExecuteOptions & {
+    translateOptions: TranslateOptions;
+    fileName?: string;
+  }): Promise<FullTranslateResult> {
+    const { text, translateOptions, fileName } = options;
+
+    if (!text.trim()) {
+      return {
+        translatedText: '',
+        sourceLang: translateOptions.sourceLanguage || 'auto',
+        targetLang: translateOptions.targetLanguage,
+        originalFileName: fileName,
+        suggestedFileName: this.generateTranslatedFileName(fileName, translateOptions.targetLanguage)
+      };
+    }
+
+    if (!translateOptions.targetLanguage) {
+      throw createError(
+        'TRANSLATE_MISSING_TARGET',
+        'Target language is required for translation'
+      );
+    }
+
+    if (!this.aiService.validateConfig()) {
+      throw createError(
+        'AI_CONFIG_INVALID',
+        'AI service configuration is invalid'
+      );
+    }
+
+    try {
+      console.log('FullTranslateAction: Starting translation with options:', translateOptions);
+
+      // 使用专门的全文翻译prompt
+      const prompt = this.createFullTranslatePrompt(text, translateOptions);
+      console.log('FullTranslateAction: Generated prompt:', prompt.substring(0, 200) + '...');
+
+      const response = await this.aiService.generate(prompt);
+      console.log('FullTranslateAction: AI response received:', response);
+
+      if (!response.success) {
+        console.error('FullTranslateAction: AI service failed:', response.error);
+        throw createError(
+          'TRANSLATE_AI_FAILED',
+          response.error?.message || 'AI service failed'
+        );
+      }
+
+      // 直接使用AI返回的翻译文本
+      const translatedText = response.content.trim();
+      console.log('FullTranslateAction: Translation completed, length:', translatedText.length);
+
+      return {
+        translatedText,
+        sourceLang: translateOptions.sourceLanguage || 'auto',
+        targetLang: translateOptions.targetLanguage,
+        originalFileName: fileName,
+        suggestedFileName: this.generateTranslatedFileName(fileName, translateOptions.targetLanguage)
+      };
+    } catch (error) {
+      throw createError(
+        'TRANSLATE_FAILED',
+        'Failed to translate text',
+        { originalError: error }
+      );
+    }
+  }
+
+  /**
+   * 创建全文翻译提示词
+   */
+  private createFullTranslatePrompt(text: string, options: TranslateOptions): string {
+    return PromptBuilder.buildTranslatePrompt(text, {
+      sourceLanguage: options.sourceLanguage,
+      targetLanguage: options.targetLanguage,
+      preserveTerminology: options.preserveTerminology,
+      context: options.context
+    });
+  }
+
+  /**
+   * 生成翻译后的文件名
+   */
+  private generateTranslatedFileName(originalFileName?: string, targetLanguage?: string): string {
+    if (!originalFileName) {
+      return `translated_document_${targetLanguage || 'en'}.md`;
+    }
+
+    const lastDotIndex = originalFileName.lastIndexOf('.');
+    const nameWithoutExt = lastDotIndex > 0 ? originalFileName.substring(0, lastDotIndex) : originalFileName;
+    const extension = lastDotIndex > 0 ? originalFileName.substring(lastDotIndex) : '.md';
+
+    // 根据目标语言添加后缀
+    const languageSuffix = this.getLanguageSuffix(targetLanguage || 'en');
+
+    return `${nameWithoutExt}_${languageSuffix}${extension}`;
+  }
+
+  /**
+   * 获取语言后缀
+   */
+  private getLanguageSuffix(languageCode: string): string {
+    const suffixMap: Record<string, string> = {
+      'en-US': 'en',
+      'en': 'en',
+      'zh-CN': 'zh',
+      'zh': 'zh',
+      'ja': 'ja',
+      'ko': 'ko',
+      'fr': 'fr',
+      'de': 'de',
+      'es': 'es',
+      'ru': 'ru',
+    };
+
+    return suffixMap[languageCode] || languageCode.toLowerCase();
   }
 }

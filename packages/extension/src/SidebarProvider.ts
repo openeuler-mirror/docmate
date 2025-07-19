@@ -100,6 +100,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
           } as ExtendedHostResult);
           break;
+        case 'fullTranslate':
+          console.log('SidebarProvider: Handling fullTranslate result:', result);
+          // 全文翻译：创建新文件并显示结果
+          await this.handleFullTranslateResult(result);
+          break;
         case 'rewrite':
           this.sendToWebview({
             command: 'renderRewriteResult',
@@ -146,6 +151,57 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private sendToWebview(message: HostResult | ExtendedHostResult): void {
     if (this._view) {
       this._view.webview.postMessage(message);
+    }
+  }
+
+  /**
+   * 处理全文翻译结果
+   */
+  private async handleFullTranslateResult(result: any) {
+    try {
+      console.log('SidebarProvider: handleFullTranslateResult called with:', result);
+      const { translatedText, suggestedFileName, sourceLang, targetLang } = result;
+
+      // 创建新文档
+      const newDocument = await vscode.workspace.openTextDocument({
+        content: translatedText,
+        language: 'markdown'
+      });
+
+      // 显示新文档
+      await vscode.window.showTextDocument(newDocument);
+
+      // 发送成功消息到webview
+      this.sendToWebview({
+        command: 'renderTranslateResult',
+        payload: {
+          type: 'fullTranslate',
+          message: `翻译完成！已创建新文档。从 ${sourceLang} 翻译为 ${targetLang}`,
+          suggestedFileName: suggestedFileName,
+          success: true
+        }
+      } as ExtendedHostResult);
+
+      // 提示用户保存文件
+      if (suggestedFileName) {
+        const saveChoice = await vscode.window.showInformationMessage(
+          `翻译完成！建议保存为: ${suggestedFileName}`,
+          '保存为建议文件名',
+          '手动保存'
+        );
+
+        if (saveChoice === '保存为建议文件名') {
+          const currentWorkspace = vscode.workspace.workspaceFolders?.[0];
+          if (currentWorkspace) {
+            const suggestedPath = vscode.Uri.joinPath(currentWorkspace.uri, suggestedFileName);
+            await vscode.workspace.fs.writeFile(suggestedPath, Buffer.from(translatedText, 'utf8'));
+            await vscode.window.showTextDocument(suggestedPath);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error handling full translate result:', error);
+      this.sendErrorToWebview('创建翻译文档失败');
     }
   }
 

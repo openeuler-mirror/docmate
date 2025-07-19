@@ -31,9 +31,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.onDidChangeTextEditorSelection(e => {
       const selectedText = e.textEditor.document.getText(e.selections[0]);
-      if (selectedText.trim()) {
-        sidebarProvider.updateSelectedText(selectedText);
-      }
+      // 无论是否有选中文本都发送更新，这样可以清除之前的选中状态
+      sidebarProvider.updateSelectedText(selectedText);
     })
   );
 }
