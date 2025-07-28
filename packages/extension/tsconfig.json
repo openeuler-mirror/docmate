@@ -28,7 +28,7 @@
       "path": "../shared"
     },
     {
-      "path": "../core"
+      "path": "../utils"
     }
   ]
 }

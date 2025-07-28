@@ -26,8 +26,8 @@
       "@docmate/shared/*": [
         "./packages/shared/src/*"
       ],
-      "@docmate/core/*": [
-        "./packages/core/src/*"
+      "@docmate/utils/*": [
+        "./packages/utils/src/*"
       ],
       "@docmate/ui/*": [
         "./packages/ui/src/*"
@@ -49,7 +49,7 @@
       "path": "./packages/shared"
     },
     {
-      "path": "./packages/core"
+      "path": "./packages/utils"
     },
     {
       "path": "./packages/extension"

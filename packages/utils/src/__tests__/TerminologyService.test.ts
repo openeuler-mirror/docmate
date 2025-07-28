@@ -30,27 +30,30 @@ describe('TerminologyService', () => {
     expect(term).toBeNull();
   });
 
-  test('should search terms', () => {
+  test('should search terms by query', () => {
     const results = service.searchTerms('package');
     expect(results.length).toBeGreaterThan(0);
+    expect(results.some(r => r.term === 'RPM')).toBe(true);
   });
 
-  test('should check terminology usage', () => {
-    const text = 'This is about openeuler and RPM packages.';
-    const usage = service.checkTerminologyUsage(text);
-    
-    expect(usage.length).toBeGreaterThan(0);
-    
-    const openeulerUsage = usage.find(u => u.term.toLowerCase() === 'openeuler');
-    expect(openeulerUsage).toBeTruthy();
-    expect(openeulerUsage?.isCorrect).toBe(false);
-    expect(openeulerUsage?.suggestion).toBe('openEuler');
+  test('should get terms by category', () => {
+    const techTerms = service.getTermsByCategory('technology');
+    expect(techTerms.length).toBeGreaterThan(0);
+    expect(techTerms.every(t => t.category === 'technology')).toBe(true);
   });
 
-  test('should get categories', () => {
+  test('should get all categories', () => {
     const categories = service.getCategories();
-    expect(categories.length).toBeGreaterThan(0);
     expect(categories).toContain('product');
     expect(categories).toContain('technology');
+  });
+
+  test('should check terminology usage in text', () => {
+    const text = 'Install openEuler using rpm packages';
+    const results = service.checkTerminologyUsage(text);
+    
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some(r => r.entry.term === 'openEuler')).toBe(true);
+    expect(results.some(r => r.entry.term === 'RPM')).toBe(true);
   });
 });

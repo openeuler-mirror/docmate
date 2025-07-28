@@ -1,4 +1,4 @@
-import { diffChars, diffWords, diffLines } from 'diff';
+import { diffChars, diffWords, diffLines, Change } from 'diff';
 import { DiffSegment } from '@docmate/shared';
 
 /**
@@ -6,7 +6,7 @@ import { DiffSegment } from '@docmate/shared';
  */
 export function calculateCharDiff(original: string, modified: string): DiffSegment[] {
   const changes = diffChars(original, modified);
-  return changes.map(part => {
+  return changes.map((part: Change) => {
     if (part.added) {
       return { type: 'insert', value: part.value };
     }
@@ -22,7 +22,7 @@ export function calculateCharDiff(original: string, modified: string): DiffSegme
  */
 export function calculateWordDiff(original: string, modified: string): DiffSegment[] {
   const changes = diffWords(original, modified);
-  return changes.map(part => {
+  return changes.map((part: Change) => {
     if (part.added) {
       return { type: 'insert', value: part.value };
     }
@@ -38,7 +38,7 @@ export function calculateWordDiff(original: string, modified: string): DiffSegme
  */
 export function calculateLineDiff(original: string, modified: string): DiffSegment[] {
   const changes = diffLines(original, modified);
-  return changes.map(part => {
+  return changes.map((part: Change) => {
     if (part.added) {
       return { type: 'insert', value: part.value };
     }

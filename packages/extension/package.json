@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@docmate/shared": "workspace:*",
-    "@docmate/core": "workspace:*"
+    "@docmate/utils": "workspace:*"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",

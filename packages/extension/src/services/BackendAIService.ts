@@ -1,4 +1,4 @@
-import { configService } from '@docmate/core';
+import { configService } from '@docmate/utils';
 import { createError, ChatMessage, AIResponse } from '@docmate/shared';
 import { AuthService } from './AuthService';
 

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { configService } from '@docmate/core';
+import { configService } from '@docmate/utils';
 
 /**
  * 认证状态

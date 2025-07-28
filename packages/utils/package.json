@@ -1,7 +1,7 @@
 {
-  "name": "@docmate/core",
+  "name": "@docmate/utils",
   "version": "0.1.0",
-  "description": "Core business logic for DocMate",
+  "description": "Utility functions and services for DocMate",
   "main": "./out/index.js",
   "types": "./out/index.d.ts",
   "scripts": {

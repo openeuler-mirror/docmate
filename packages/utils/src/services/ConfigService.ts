@@ -2,7 +2,7 @@ import { UserSettings } from '@docmate/shared';
 
 /**
  * ConfigService - 配置管理服务
- * 用于在core模块内部存储和提供配置信息
+ * 用于在utils模块内部存储和提供配置信息
  */
 class ConfigService {
   private static instance: ConfigService;

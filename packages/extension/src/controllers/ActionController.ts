@@ -1,9 +1,8 @@
 import * as vscode from 'vscode';
 import {
-  AIService,
   TerminologyService,
   configService
-} from '@docmate/core';
+} from '@docmate/utils';
 import {
   AIServiceConfig,
   CheckResultItem,
@@ -22,7 +21,6 @@ import { AuthUIHelper } from '../services/AuthUIHelper';
 import { BackendAIService } from '../services/BackendAIService';
 
 export class ActionController {
-  private aiService: AIService;
   private terminologyService: TerminologyService;
   private authService: AuthService | null = null;
   private authUIHelper: AuthUIHelper | null = null;
@@ -31,7 +29,6 @@ export class ActionController {
   constructor() {
     // 初始化服务
     this.terminologyService = new TerminologyService();
-    this.aiService = new AIService(this.getAIConfig());
 
     // 初始化configService
     this.updateConfiguration();
@@ -434,10 +431,7 @@ export class ActionController {
    * 验证设置
    */
   private validateSettings(): any {
-    const configStatus = this.aiService.getConfigStatus();
-
     return {
-      aiService: configStatus,
       terminology: {
         isLoaded: !!this.terminologyService.getDatabase(),
       }
@@ -452,7 +446,6 @@ export class ActionController {
     const backendBaseUrl = config.get('backend.baseUrl', 'http://localhost:8000');
 
     const newConfig = this.getAIConfig();
-    this.aiService.updateConfig(newConfig);
 
     // 同时更新configService
     configService.setConfig({
