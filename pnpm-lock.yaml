@@ -30,6 +30,8 @@ importers:
         specifier: ^5.3.3
         version: 5.8.3
 
+  packages/backend: {}
+
   packages/core:
     dependencies:
       '@docmate/shared':

@@ -2,11 +2,6 @@ import * as vscode from 'vscode';
 import {
   AIService,
   TerminologyService,
-  CheckActionClass as CheckAction,
-  PolishActionClass as PolishAction,
-  TranslateActionClass as TranslateAction,
-  FullTranslateActionClass as FullTranslateAction,
-  RewriteActionClass as RewriteAction,
   configService
 } from '@docmate/core';
 import {
@@ -22,10 +17,16 @@ import {
   ChatMessage,
   createError
 } from '@docmate/shared';
+import { AuthService, AuthStatus } from '../services/AuthService';
+import { AuthUIHelper } from '../services/AuthUIHelper';
+import { BackendAIService } from '../services/BackendAIService';
 
 export class ActionController {
   private aiService: AIService;
   private terminologyService: TerminologyService;
+  private authService: AuthService | null = null;
+  private authUIHelper: AuthUIHelper | null = null;
+  private backendAIService: BackendAIService | null = null;
 
   constructor() {
     // 初始化服务
@@ -34,6 +35,16 @@ export class ActionController {
 
     // 初始化configService
     this.updateConfiguration();
+  }
+
+  /**
+   * 初始化认证服务
+   */
+  public async initializeAuth(secretStorage: vscode.SecretStorage): Promise<void> {
+    this.authService = AuthService.getInstance(secretStorage);
+    this.authUIHelper = new AuthUIHelper(this.authService);
+    this.backendAIService = new BackendAIService(this.authService);
+    await this.authService.initialize();
   }
 
   /**
@@ -77,6 +88,10 @@ export class ActionController {
           console.log('ActionController: Executing settings command');
           result = await this.handleSettings(payload);
           break;
+        case 'auth':
+          console.log('ActionController: Executing auth command');
+          result = await this.handleAuth(payload);
+          break;
         default:
           throw createError('UNKNOWN_COMMAND', `Unknown command: ${command}`);
       }
@@ -90,6 +105,17 @@ export class ActionController {
   }
 
   /**
+   * 检查认证状态
+   */
+  private async ensureAuthenticated(): Promise<boolean> {
+    if (!this.authUIHelper) {
+      throw createError('AUTH_NOT_INITIALIZED', 'Authentication service not initialized');
+    }
+
+    return await this.authUIHelper.ensureAuthenticated();
+  }
+
+  /**
    * 处理检查命令 - 返回新的diff格式
    */
   private async handleCheck(payload: any): Promise<CheckResult> {
@@ -99,8 +125,18 @@ export class ActionController {
       throw createError('INVALID_TEXT', 'Text is required for check operation');
     }
 
-    const action = new CheckAction(this.aiService, this.terminologyService);
-    return action.execute({ text, checkOptions: options });
+    // 检查认证状态
+    const isAuthenticated = await this.ensureAuthenticated();
+    if (!isAuthenticated) {
+      throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    }
+
+    if (!this.backendAIService) {
+      throw createError('BACKEND_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
+    }
+
+    // 使用后端AI服务
+    return await this.backendAIService.check(text, options);
   }
 
   /**
@@ -113,8 +149,18 @@ export class ActionController {
       throw createError('INVALID_TEXT', 'Text is required for polish operation');
     }
 
-    const action = new PolishAction(this.aiService);
-    return action.execute({ text, polishOptions: options });
+    // 检查认证状态
+    const isAuthenticated = await this.ensureAuthenticated();
+    if (!isAuthenticated) {
+      throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    }
+
+    if (!this.backendAIService) {
+      throw createError('BACKEND_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
+    }
+
+    // 使用后端AI服务
+    return await this.backendAIService.polish(text, options);
   }
 
   /**
@@ -131,8 +177,17 @@ export class ActionController {
       throw createError('MISSING_TARGET_LANGUAGE', 'Target language is required for translation');
     }
 
-    const action = new TranslateAction(this.aiService);
-    return action.execute({ text, translateOptions: options });
+    // 检查认证状态
+    const isAuthenticated = await this.ensureAuthenticated();
+    if (!isAuthenticated) {
+      throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    }
+
+    // 使用BackendAIService
+    if (!this.backendAIService) {
+      throw createError('BACKEND_AI_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
+    }
+    return await this.backendAIService.translate(text, options);
   }
 
   /**
@@ -149,12 +204,11 @@ export class ActionController {
       throw createError('MISSING_TARGET_LANGUAGE', 'Target language is required for translation');
     }
 
-    const action = new FullTranslateAction(this.aiService);
-    return action.execute({
-      text,
-      translateOptions: options,
-      fileName: fileName || this.getCurrentFileName()
-    });
+    // 使用BackendAIService
+    if (!this.backendAIService) {
+      throw createError('BACKEND_AI_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
+    }
+    return await this.backendAIService.translate(text, options);
   }
 
   /**
@@ -167,12 +221,11 @@ export class ActionController {
       throw createError('INVALID_TEXT', 'Text is required for rewrite operation');
     }
 
-    const action = new RewriteAction(this.aiService);
-    return action.execute({
-      text,
-      conversationHistory,
-      originalText,
-    });
+    // 使用BackendAIService
+    if (!this.backendAIService) {
+      throw createError('BACKEND_AI_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
+    }
+    return await this.backendAIService.rewrite(text, { conversationHistory, originalText });
   }
 
   /**
@@ -237,6 +290,53 @@ export class ActionController {
   }
 
   /**
+   * 处理认证命令
+   */
+  private async handleAuth(payload: any): Promise<any> {
+    if (!this.authService || !this.authUIHelper) {
+      throw createError('AUTH_NOT_INITIALIZED', 'Authentication service not initialized');
+    }
+
+    const { action, data } = payload;
+
+    switch (action) {
+      case 'status':
+        return {
+          isAuthenticated: this.authService.isAuthenticated(),
+          status: this.authService.getStatus(),
+          userInfo: this.authService.getUserInfo()
+        };
+
+      case 'login':
+        return await this.authUIHelper.showLoginDialog();
+
+      case 'logout':
+        return await this.authUIHelper.showLogoutDialog();
+
+      case 'showStatus':
+        await this.authUIHelper.showAuthStatus();
+        return { status: 'shown' };
+
+      case 'loginWithToken':
+        if (!data || !data.token) {
+          throw createError('INVALID_PAYLOAD', 'Token is required for login');
+        }
+        try {
+          const authResponse = await this.authService.loginWithSSOToken(data.token);
+          return {
+            success: true,
+            userInfo: authResponse.user_info
+          };
+        } catch (error) {
+          throw createError('AUTH_FAILED', `Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+      default:
+        throw createError('UNKNOWN_AUTH_ACTION', `Unknown auth action: ${action}`);
+    }
+  }
+
+  /**
    * 处理设置命令
    */
   private async handleSettings(payload: any): Promise<any> {
@@ -274,6 +374,9 @@ export class ActionController {
     const config = vscode.workspace.getConfiguration('docmate');
 
     return {
+      backend: {
+        baseUrl: config.get('backend.baseUrl', 'http://localhost:8000'),
+      },
       aiService: {
         apiKey: config.get('aiService.apiKey', ''),
         endpoint: config.get('aiService.endpoint', ''),
@@ -285,6 +388,7 @@ export class ActionController {
       masked: {
         hasApiKey: !!config.get('aiService.apiKey', ''),
         hasEndpoint: !!config.get('aiService.endpoint', ''),
+        hasBackendUrl: !!config.get('backend.baseUrl', ''),
       }
     };
   }
@@ -296,6 +400,12 @@ export class ActionController {
     const config = vscode.workspace.getConfiguration('docmate');
 
     try {
+      if (data.backend) {
+        if (data.backend.baseUrl !== undefined) {
+          await config.update('backend.baseUrl', data.backend.baseUrl, vscode.ConfigurationTarget.Global);
+        }
+      }
+
       if (data.aiService) {
         if (data.aiService.apiKey !== undefined) {
           await config.update('aiService.apiKey', data.aiService.apiKey, vscode.ConfigurationTarget.Global);
@@ -338,6 +448,9 @@ export class ActionController {
    * 更新配置
    */
   updateConfiguration(): void {
+    const config = vscode.workspace.getConfiguration('docmate');
+    const backendBaseUrl = config.get('backend.baseUrl', 'http://localhost:8000');
+
     const newConfig = this.getAIConfig();
     this.aiService.updateConfig(newConfig);
 
@@ -349,6 +462,9 @@ export class ActionController {
       timeout: newConfig.timeout,
       maxRetries: newConfig.maxRetries,
     });
+
+    // 设置后端基础URL
+    configService.setBackendBaseUrl(backendBaseUrl);
   }
 
   /**

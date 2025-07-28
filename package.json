@@ -95,25 +95,10 @@
     "configuration": {
       "title": "DocMate",
       "properties": {
-        "docmate.aiService.apiKey": {
+        "docmate.backend.baseUrl": {
           "type": "string",
-          "default": "",
-          "description": "API key for AI service"
-        },
-        "docmate.api.baseUrl": {
-          "type": "string",
-          "default": "https://api.openai.com/v1",
-          "description": "Base URL for OpenAI-compatible API"
-        },
-        "docmate.api.modelName": {
-          "type": "string", 
-          "default": "gpt-3.5-turbo",
-          "description": "Model name to use"
-        },
-        "docmate.aiService.endpoint": {
-          "type": "string",
-          "default": "",
-          "description": "API endpoint for AI service"
+          "default": "http://localhost:8000",
+          "description": "DocMate backend service URL"
         },
         "docmate.terminology.autoCheck": {
           "type": "boolean",
@@ -128,9 +113,12 @@
     "build": "pnpm run build:extension && pnpm run build:ui",
     "build:extension": "pnpm --filter extension build",
     "build:ui": "pnpm --filter ui build",
-    "dev": "pnpm run dev:extension & pnpm run dev:ui",
+    "dev": "pnpm run dev:extension & pnpm run dev:ui & pnpm run dev:backend",
     "dev:extension": "pnpm --filter extension dev",
     "dev:ui": "pnpm --filter ui dev",
+    "dev:backend": "pnpm --filter backend dev",
+    "dev:full": "pnpm run dev:extension & pnpm run dev:ui & pnpm run dev:backend",
+    "start:backend": "pnpm --filter backend start",
     "watch": "pnpm run watch:extension & pnpm run watch:ui",
     "watch:extension": "pnpm --filter extension watch",
     "watch:ui": "pnpm --filter ui watch",

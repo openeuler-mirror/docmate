@@ -1028,3 +1028,254 @@ body {
   border-top: 1px solid var(--vscode-panel-border);
   background-color: var(--vscode-editorWidget-background);
 }
+
+/* 认证状态样式 */
+.auth-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background-color: var(--vscode-sideBar-background);
+  font-size: 13px;
+}
+
+.auth-status.loading {
+  justify-content: center;
+  gap: 8px;
+}
+
+.auth-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--vscode-progressBar-background);
+  border-top: 2px solid var(--vscode-progressBar-foreground);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.auth-status.authenticated {
+  background-color: var(--vscode-statusBar-background);
+}
+
+.auth-status.not-authenticated {
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex: 1;
+}
+
+.user-info:hover {
+  opacity: 0.8;
+}
+
+.user-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.username {
+  font-weight: 500;
+  color: var(--vscode-foreground);
+}
+
+.user-email {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.auth-button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.auth-button.login {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.auth-button.login:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.auth-button.logout {
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.auth-button.logout:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.auth-message {
+  color: var(--vscode-descriptionForeground);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+/* 认证提示样式 */
+.auth-required-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.notice-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.notice-text {
+  flex: 1;
+}
+
+.notice-title {
+  font-weight: 500;
+  color: var(--vscode-foreground);
+  margin-bottom: 2px;
+}
+
+.notice-description {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* 修改说明样式 - 简洁美观版 */
+.changes-section {
+  margin-top: 16px;
+  padding: 16px;
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+}
+
+.changes-section h4 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.changes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.change-item {
+  padding: 12px;
+  background-color: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.change-item:hover {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.change-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.change-type {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.change-type-structure {
+  background-color: rgba(0, 122, 255, 0.1);
+  color: #007ACC;
+  border: 1px solid rgba(0, 122, 255, 0.2);
+}
+
+.change-type-clarity {
+  background-color: rgba(255, 193, 7, 0.1);
+  color: #FF8C00;
+  border: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+.change-type-conciseness {
+  background-color: rgba(40, 167, 69, 0.1);
+  color: #28A745;
+  border: 1px solid rgba(40, 167, 69, 0.2);
+}
+
+.change-type-grammar {
+  background-color: rgba(220, 53, 69, 0.1);
+  color: #DC3545;
+  border: 1px solid rgba(220, 53, 69, 0.2);
+}
+
+.change-type-tone {
+  background-color: rgba(102, 16, 242, 0.1);
+  color: #6610F2;
+  border: 1px solid rgba(102, 16, 242, 0.2);
+}
+
+.change-type-style {
+  background-color: rgba(214, 51, 132, 0.1);
+  color: #D63384;
+  border: 1px solid rgba(214, 51, 132, 0.2);
+}
+
+.change-description {
+  font-size: 13px;
+  color: var(--vscode-foreground);
+  font-weight: 500;
+  line-height: 1.4;
+  flex: 1;
+}
+
+.change-reason {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.4;
+  font-style: italic;
+  padding-left: 16px;
+  border-left: 2px solid var(--vscode-panel-border);
+}

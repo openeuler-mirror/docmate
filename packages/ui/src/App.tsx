@@ -11,6 +11,7 @@ import { ChatWindow } from './components/ChatWindow';
 import { InputPanel } from './components/InputPanel';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorMessage } from './components/ErrorMessage';
+import { AuthStatus } from './components/AuthStatus';
 import './App.css';
 
 interface AppState {
@@ -18,6 +19,7 @@ interface AppState {
   operationState: OperationState;
   selectedText: string;
   settings: any;
+  isAuthenticated: boolean;
 }
 
 export default function App() {
@@ -28,10 +30,19 @@ export default function App() {
     },
     selectedText: '',
     settings: null,
+    isAuthenticated: false,
   });
 
   // 添加错误边界
   const [hasError, setHasError] = useState(false);
+
+  // 处理认证状态变化
+  const handleAuthChange = (isAuthenticated: boolean) => {
+    setState(prev => ({
+      ...prev,
+      isAuthenticated
+    }));
+  };
 
   useEffect(() => {
     try {
@@ -94,7 +105,7 @@ export default function App() {
    * 处理渲染结果
    */
   const handleRenderResult = (message: HostResult) => {
-    const { data } = message.payload;
+    const data = message.payload?.data;
 
     if (data && typeof data === 'object' && 'type' in data && data.type === 'selectedText') {
       setState(prev => ({
@@ -104,7 +115,7 @@ export default function App() {
       return;
     }
 
-    const { type } = message.payload;
+    const type = message.payload?.type;
     if (type && data) {
       // 添加到对话历史
       const conversationItem: ConversationItem = {
@@ -133,7 +144,7 @@ export default function App() {
    * 处理扩展结果（新的diff格式）
    */
   const handleExtendedResult = (message: ExtendedHostResult) => {
-    const { type, diffs, issues, sourceLang, targetLang, message: resultMessage, success } = message.payload;
+    const { type, diffs, issues, changes, sourceLang, targetLang, message: resultMessage, success } = message.payload;
 
     if (type) {
       // 处理fullTranslate的特殊情况
@@ -188,6 +199,7 @@ export default function App() {
           results: {
             diffs,
             issues,
+            changes,
             sourceLang,
             targetLang,
           },
@@ -216,7 +228,7 @@ export default function App() {
       operationState: {
         ...prev.operationState,
         isLoading: false,
-        error: message.payload.error,
+        error: message.payload?.error,
       },
     }));
   };
@@ -229,7 +241,7 @@ export default function App() {
       ...prev,
       operationState: {
         ...prev.operationState,
-        isLoading: message.payload.loading || false,
+        isLoading: message.payload?.loading || false,
       },
     }));
   };
@@ -363,6 +375,8 @@ export default function App() {
         </button>
       </div>
 
+      <AuthStatus onAuthChange={handleAuthChange} />
+
       {state.operationState.error && (
         <ErrorMessage
           message={state.operationState.error}
@@ -390,7 +404,8 @@ export default function App() {
         <InputPanel
           selectedText={state.selectedText}
           onExecute={executeOperation}
-          disabled={state.operationState.isLoading}
+          disabled={state.operationState.isLoading || !state.isAuthenticated}
+          authRequired={!state.isAuthenticated}
         />
       </div>
     </div>

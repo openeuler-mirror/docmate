@@ -21,6 +21,45 @@ interface ResultCardProps {
   onDismiss?: () => void;
 }
 
+// 辅助函数定义
+const getChangeTypeIcon = (type: string) => {
+  switch (type) {
+    case 'structure':
+      return '🏗️';
+    case 'clarity':
+      return '💡';
+    case 'conciseness':
+      return '✂️';
+    case 'grammar':
+      return '✏️';
+    case 'tone':
+      return '🎵';
+    case 'style':
+      return '🎨';
+    default:
+      return '✨';
+  }
+};
+
+const getChangeTypeName = (type: string) => {
+  switch (type) {
+    case 'structure':
+      return '结构优化';
+    case 'clarity':
+      return '表达清晰';
+    case 'conciseness':
+      return '简洁表达';
+    case 'grammar':
+      return '语法修正';
+    case 'tone':
+      return '语调调整';
+    case 'style':
+      return '风格改进';
+    default:
+      return '文本优化';
+  }
+};
+
 export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
@@ -51,7 +90,13 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
   const isDiffFormat = results && typeof results === 'object' && 'diffs' in results;
 
   if (isDiffFormat) {
-    const diffResults = results as { diffs?: DiffSegment[]; issues?: any[]; sourceLang?: string; targetLang?: string; };
+    const diffResults = results as {
+      diffs?: DiffSegment[];
+      issues?: any[];
+      changes?: any[];
+      sourceLang?: string;
+      targetLang?: string;
+    };
 
     const handleAccept = (suggestion: string) => {
       console.log('ResultCard: handleAccept called with suggestion:', suggestion);
@@ -106,6 +151,29 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
             </ul>
           </div>
         )}
+
+        {diffResults.changes && diffResults.changes.length > 0 && (
+          <div className="changes-section">
+            <h4>✨ 润色改进 ({diffResults.changes.length}项)</h4>
+            <div className="changes-list">
+              {diffResults.changes.map((change, index) => (
+                <div key={index} className="change-item">
+                  <div className="change-header">
+                    <span className={`change-type change-type-${change.type}`}>
+                      {getChangeTypeIcon(change.type)} {getChangeTypeName(change.type)}
+                    </span>
+                    <span className="change-description">{change.description}</span>
+                  </div>
+                  {change.reason && (
+                    <div className="change-reason">
+                      {change.reason}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -147,6 +215,8 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
         return '📄';
     }
   };
+
+
 
   const renderCheckResults = (items: CheckResultItem[]) => (
     <div className="check-results">

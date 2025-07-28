@@ -6,22 +6,25 @@ export interface BaseCommand {
 
 // UI发往Host的命令接口
 export interface UICommand extends BaseCommand {
-  command: 'check' | 'polish' | 'translate' | 'refresh' | 'settings';
+  command: 'check' | 'polish' | 'translate' | 'refresh' | 'settings' | 'auth';
   payload: {
     text?: string;
     options?: Record<string, any>;
+    action?: string;
+    data?: any;
   };
 }
 
 // Host发往UI的结果接口
 export interface HostResult extends BaseCommand {
-  command: 'renderResult' | 'error' | 'loading' | 'ready';
-  payload: {
+  command: 'renderResult' | 'error' | 'loading' | 'ready' | 'auth';
+  payload?: {
     type?: 'check' | 'polish' | 'translate';
     data?: any;
     error?: string;
     loading?: boolean;
   };
+  result?: any;
 }
 
 // 检查结果项
@@ -140,6 +143,7 @@ export interface ConversationItem {
   results?: CheckResultItem[] | PolishResultItem[] | TranslateResultItem[] | {
     diffs?: DiffSegment[];
     issues?: any[];
+    changes?: any[];
     sourceLang?: string;
     targetLang?: string;
     message?: string;
@@ -306,6 +310,7 @@ export interface ExtendedHostResult extends BaseCommand {
     type?: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
     diffs?: DiffSegment[];
     issues?: any[];
+    changes?: any[];
     sourceLang?: string;
     targetLang?: string;
     conversationId?: string;

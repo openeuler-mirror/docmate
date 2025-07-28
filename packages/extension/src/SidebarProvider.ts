@@ -8,9 +8,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   private _view?: vscode.WebviewView;
   private _actionController: ActionController;
+  private _context: vscode.ExtensionContext | null = null;
 
   constructor(private readonly _extensionUri: vscode.Uri) {
     this._actionController = new ActionController();
+  }
+
+  /**
+   * 设置扩展上下文并初始化认证
+   */
+  public async setContext(context: vscode.ExtensionContext): Promise<void> {
+    this._context = context;
+    await this._actionController.initializeAuth(context.secrets);
   }
 
   public resolveWebviewView(
@@ -85,7 +94,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             command: 'renderPolishResult',
             payload: {
               type: 'polish',
-              diffs: result.diffs
+              diffs: result.diffs,
+              changes: result.changes
             }
           } as ExtendedHostResult);
           break;
@@ -121,6 +131,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           this.sendToWebview({
             command: 'ready',
             payload: { status: 'applied' }
+          } as HostResult);
+          break;
+        case 'auth':
+          // 认证命令响应
+          this.sendToWebview({
+            command: 'auth',
+            result: result
           } as HostResult);
           break;
         default:

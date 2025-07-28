@@ -4,9 +4,10 @@ interface InputPanelProps {
   selectedText: string;
   onExecute: (operation: string, text: string, options?: any) => void;
   disabled: boolean;
+  authRequired?: boolean;
 }
 
-export function InputPanel({ selectedText, onExecute, disabled }: InputPanelProps) {
+export function InputPanel({ selectedText, onExecute, disabled, authRequired = false }: InputPanelProps) {
   const [inputText, setInputText] = useState('');
   const [targetLanguage, setTargetLanguage] = useState('en-US');
 
@@ -58,6 +59,17 @@ export function InputPanel({ selectedText, onExecute, disabled }: InputPanelProp
 
   return (
     <div className="input-panel">
+      {/* 认证提示 */}
+      {authRequired && (
+        <div className="auth-required-notice">
+          <div className="notice-icon">🔒</div>
+          <div className="notice-text">
+            <div className="notice-title">需要登录</div>
+            <div className="notice-description">请先登录openEuler账户以使用AI功能</div>
+          </div>
+        </div>
+      )}
+
       {/* 选中文本引用显示 */}
       {hasSelectedText && (
         <div className="selected-text-reference" title={selectedText}>

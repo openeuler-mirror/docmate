@@ -1,11 +1,14 @@
 import * as vscode from 'vscode';
 import { SidebarProvider } from './SidebarProvider';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   console.log('DocMate extension is now active!');
 
   // 创建侧边栏提供者
   const sidebarProvider = new SidebarProvider(context.extensionUri);
+
+  // 设置扩展上下文并初始化认证
+  await sidebarProvider.setContext(context);
 
   // 注册侧边栏视图
   context.subscriptions.push(
