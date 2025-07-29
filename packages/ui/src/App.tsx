@@ -10,7 +10,7 @@ import { ChatWindow } from './components/ChatWindow';
 import { InputPanel } from './components/InputPanel';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorMessage } from './components/ErrorMessage';
-import { AuthStatus } from './components/AuthStatus';
+import { CompactHeader } from './components/CompactHeader';
 import './App.css';
 
 interface AppState {
@@ -116,26 +116,27 @@ export default function App() {
 
     const type = message.payload?.type;
     if (type && data) {
-      // 添加到对话历史
-      const conversationItem: ConversationItem = {
-        id: generateId(),
-        type: 'assistant',
-        content: `${getOperationName(type)}结果`,
-        timestamp: Date.now(),
-        operation: type as any,
-        results: data,
-      };
+      // 将结果附加到最后一个用户消息上，不创建新的助手消息
+      setState(prev => {
+        const conversations = [...prev.conversations];
+        const lastConversation = conversations[conversations.length - 1];
 
-      setState(prev => ({
-        ...prev,
-        conversations: [...prev.conversations, conversationItem],
-        operationState: {
-          ...prev.operationState,
-          isLoading: false,
-          error: undefined,
-          lastOperation: type,
-        },
-      }));
+        if (lastConversation && lastConversation.type === 'user') {
+          // 将结果附加到最后一个用户消息
+          lastConversation.results = data;
+        }
+
+        return {
+          ...prev,
+          conversations,
+          operationState: {
+            ...prev.operationState,
+            isLoading: false,
+            error: undefined,
+            lastOperation: type,
+          },
+        };
+      });
     }
   };
 
@@ -149,72 +150,64 @@ export default function App() {
     if (type) {
       // 处理fullTranslate的特殊情况
       if (type === 'fullTranslate') {
-        const content = resultMessage || `${getOperationName(type)}完成`;
+        // 将结果附加到最后一个用户消息上，保持一致性
+        setState(prev => {
+          const conversations = [...prev.conversations];
+          const lastConversation = conversations[conversations.length - 1];
 
-        const conversationItem: ConversationItem = {
-          id: generateId(),
-          type: 'assistant',
-          content,
-          timestamp: Date.now(),
-          operation: type as any,
-          results: {
-            message: resultMessage,
-            success,
-            sourceLang,
-            targetLang,
-          },
-        };
+          if (lastConversation && lastConversation.type === 'user') {
+            // 将结果附加到最后一个用户消息
+            lastConversation.results = {
+              message: resultMessage,
+              success,
+              sourceLang,
+              targetLang,
+            };
+          }
 
-        setState(prev => ({
-          ...prev,
-          conversations: [...prev.conversations, conversationItem],
-          operationState: {
-            ...prev.operationState,
-            isLoading: false,
-            error: undefined,
-            lastOperation: type,
-          },
-        }));
+          return {
+            ...prev,
+            conversations,
+            operationState: {
+              ...prev.operationState,
+              isLoading: false,
+              error: undefined,
+              lastOperation: type,
+            },
+          };
+        });
         return;
       }
 
       // 处理其他有diffs的情况
       if (diffs) {
-        // 创建结果内容
-        let content = `${getOperationName(type)}完成`;
-        if (issues && issues.length > 0) {
-          content += `，发现 ${issues.length} 个问题`;
-        }
-        if (sourceLang && targetLang) {
-          content += `，从 ${sourceLang} 翻译为 ${targetLang}`;
-        }
+        // 将结果附加到最后一个用户消息上，不创建新的助手消息
+        setState(prev => {
+          const conversations = [...prev.conversations];
+          const lastConversation = conversations[conversations.length - 1];
 
-        // 添加到对话历史
-        const conversationItem: ConversationItem = {
-          id: generateId(),
-          type: 'assistant',
-          content,
-          timestamp: Date.now(),
-          operation: type as any,
-          results: {
-            diffs,
-            issues,
-            changes,
-            sourceLang,
-            targetLang,
-          },
-        };
+          if (lastConversation && lastConversation.type === 'user') {
+            // 将结果附加到最后一个用户消息
+            lastConversation.results = {
+              diffs,
+              issues,
+              changes,
+              sourceLang,
+              targetLang,
+            };
+          }
 
-        setState(prev => ({
-          ...prev,
-          conversations: [...prev.conversations, conversationItem],
-          operationState: {
-            ...prev.operationState,
-            isLoading: false,
-            error: undefined,
-            lastOperation: type,
-          },
-        }));
+          return {
+            ...prev,
+            conversations,
+            operationState: {
+              ...prev.operationState,
+              isLoading: false,
+              error: undefined,
+              lastOperation: type,
+            },
+          };
+        });
       }
     }
   };
@@ -364,18 +357,12 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="app-header">
-        <h2>DocMate Assistant</h2>
-        <button
-          className="refresh-button"
-          onClick={refresh}
-          title="刷新"
-        >
-          🔄
-        </button>
-      </div>
-
-      <AuthStatus onAuthChange={handleAuthChange} />
+      <CompactHeader
+        onClear={clearConversations}
+        onRefresh={refresh}
+        hasConversations={state.conversations.length > 0}
+        onAuthChange={handleAuthChange}
+      />
 
       {state.operationState.error && (
         <ErrorMessage

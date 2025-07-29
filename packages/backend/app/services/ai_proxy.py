@@ -377,12 +377,12 @@ class AIProxyService:
             response_data = self._extract_json_from_response(ai_response)
 
             if "error" in response_data:
-                # JSON解析失败，使用原始响应作为修正文本
-                corrected_text = ai_response.strip()
+                # JSON解析失败，返回原文本和友好的错误提示
+                corrected_text = original_text
                 issues = [
                     CheckIssue(
-                        message="AI响应格式解析失败，请查看原始响应",
-                        suggestion="检查AI服务配置或重试",
+                        message="AI服务响应格式异常，无法解析检查结果",
+                        suggestion="请重试或联系管理员检查AI服务配置",
                         range=[0, len(original_text)],
                         severity="warning",
                         category="system"
@@ -440,9 +440,20 @@ class AIProxyService:
             response_data = self._extract_json_from_response(ai_response)
 
             if "error" in response_data:
-                # JSON解析失败，使用原始响应作为润色文本
-                polished_text = ai_response.strip()
-                changes = []
+                # JSON解析失败，返回原文本和友好的错误提示
+                polished_text = original_text
+                changes = [
+                    PolishChange(
+                        type="system",
+                        description="AI服务响应格式异常，无法解析润色结果",
+                        reason="请重试或联系管理员检查AI服务配置",
+                        start=0,
+                        end=len(original_text),
+                        originalText=original_text,
+                        polishedText=original_text,
+                        confidence=0.0
+                    )
+                ]
             else:
                 # 成功解析JSON
                 polished_text = response_data.get("polishedText", original_text)
@@ -492,8 +503,8 @@ class AIProxyService:
             response_data = self._extract_json_from_response(ai_response)
 
             if "error" in response_data:
-                # JSON解析失败，使用原始响应作为翻译文本
-                translated_text = ai_response.strip()
+                # JSON解析失败，返回友好的错误提示
+                translated_text = "翻译服务暂时不可用，请稍后重试"
             else:
                 # 成功解析JSON
                 translated_text = response_data.get("translatedText", ai_response.strip())
@@ -535,8 +546,8 @@ class AIProxyService:
             response_data = self._extract_json_from_response(ai_response)
 
             if "error" in response_data:
-                # JSON解析失败，使用原始响应作为改写文本
-                rewritten_text = ai_response.strip()
+                # JSON解析失败，返回友好的错误提示
+                rewritten_text = "改写服务暂时不可用，请稍后重试"
             else:
                 # 成功解析JSON
                 rewritten_text = response_data.get("rewrittenText", ai_response.strip())

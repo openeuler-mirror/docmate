@@ -8,47 +8,37 @@ interface ChatWindowProps {
   onDismissResult?: (conversationId: string) => void;
 }
 
-export function ChatWindow({ conversations, onClear, onDismissResult }: ChatWindowProps) {
+export function ChatWindow({ conversations, onDismissResult }: ChatWindowProps) {
   return (
     <div className="chat-window">
-      <div className="chat-header">
-        <span className="chat-title">对话历史</span>
-        {conversations.length > 0 && (
-          <button
-            className="clear-button"
-            onClick={onClear}
-            title="清除历史"
-          >
-            🗑️
-          </button>
-        )}
-      </div>
-
       <div className="chat-content">
         {conversations.length === 0 ? (
           <div className="empty-state">
-            <p>👋 欢迎使用 DocMate！</p>
-            <p>选择文本并使用下方的功能按钮开始使用。</p>
+            <div className="welcome-icon">💬</div>
+            <h3>开始对话</h3>
+            <p>选择文本并使用下方的功能按钮，或直接输入文本开始使用 DocMate。</p>
           </div>
         ) : (
-          conversations.map(conversation => (
-            <div key={conversation.id} className="conversation-item">
-              <Message
-                type={conversation.type}
-                content={conversation.content}
-                timestamp={conversation.timestamp}
-                operation={conversation.operation}
-              />
-
-              {conversation.results && (
-                <ResultCard
-                  type={conversation.operation!}
-                  results={conversation.results}
-                  onDismiss={() => onDismissResult?.(conversation.id)}
+          <div className="conversation-list">
+            {conversations.map(conversation => (
+              <div key={conversation.id} className="conversation-item">
+                <Message
+                  type={conversation.type}
+                  content={conversation.content}
+                  timestamp={conversation.timestamp}
+                  operation={conversation.operation}
                 />
-              )}
-            </div>
-          ))
+
+                {conversation.results && (
+                  <ResultCard
+                    type={conversation.operation!}
+                    results={conversation.results}
+                    onDismiss={() => onDismissResult?.(conversation.id)}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

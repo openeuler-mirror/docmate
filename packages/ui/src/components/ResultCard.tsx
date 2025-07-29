@@ -1,11 +1,11 @@
-import { useState } from 'react';
 import {
+  DiffSegment,
   CheckResultItem,
   PolishResultItem,
-  TranslateResultItem,
-  DiffSegment
+  TranslateResultItem
 } from '@docmate/shared';
 import DiffView from './DiffView';
+import { UnifiedResultSection } from './UnifiedResultSection';
 import { vscodeApi } from '../vscodeApi';
 
 interface ResultCardProps {
@@ -13,6 +13,7 @@ interface ResultCardProps {
   results: CheckResultItem[] | PolishResultItem[] | TranslateResultItem[] | {
     diffs?: DiffSegment[];
     issues?: any[];
+    changes?: any[];
     sourceLang?: string;
     targetLang?: string;
     message?: string;
@@ -21,57 +22,9 @@ interface ResultCardProps {
   onDismiss?: () => void;
 }
 
-// 辅助函数定义
-const getChangeTypeIcon = (type: string) => {
-  switch (type) {
-    case 'structure':
-      return '🏗️';
-    case 'clarity':
-      return '💡';
-    case 'conciseness':
-      return '✂️';
-    case 'grammar':
-      return '✏️';
-    case 'tone':
-      return '🎵';
-    case 'style':
-      return '🎨';
-    default:
-      return '✨';
-  }
-};
-
-const getChangeTypeName = (type: string) => {
-  switch (type) {
-    case 'structure':
-      return '结构优化';
-    case 'clarity':
-      return '表达清晰';
-    case 'conciseness':
-      return '简洁表达';
-    case 'grammar':
-      return '语法修正';
-    case 'tone':
-      return '语调调整';
-    case 'style':
-      return '风格改进';
-    default:
-      return '文本优化';
-  }
-};
+// 这些辅助函数已移至UnifiedResultSection组件中
 
 export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-
-  const toggleExpanded = (id: string) => {
-    const newExpanded = new Set(expandedItems);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
-    } else {
-      newExpanded.add(id);
-    }
-    setExpandedItems(newExpanded);
-  };
 
   const getTypeTitle = (type: string) => {
     switch (type) {
@@ -86,16 +39,32 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
     }
   };
 
-  // 检查是否是新的diff格式
-  const isDiffFormat = results && typeof results === 'object' && 'diffs' in results;
+  // 检测diffs是否有实际修改
+  const hasActualChanges = (diffs: DiffSegment[]) => {
+    if (!diffs || diffs.length === 0) return false;
 
-  if (isDiffFormat) {
+    let totalChanges = 0;
+    for (const segment of diffs) {
+      if (segment.type === 'insert' || segment.type === 'delete') {
+        totalChanges += segment.value.length;
+      }
+    }
+
+    return totalChanges > 0;
+  };
+
+  // 检查是否是新的对象格式（而不是旧的数组格式）
+  const isObjectFormat = results && typeof results === 'object' && !Array.isArray(results);
+
+  if (isObjectFormat) {
     const diffResults = results as {
       diffs?: DiffSegment[];
       issues?: any[];
       changes?: any[];
       sourceLang?: string;
       targetLang?: string;
+      message?: string;
+      success?: boolean;
     };
 
     const handleAccept = (suggestion: string) => {
@@ -125,9 +94,14 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
       }
     };
 
+    // 检测是否有实际的diff修改
+    const hasDiffChanges = diffResults.diffs && diffResults.diffs.length > 0 && hasActualChanges(diffResults.diffs);
+    const hasNoChanges = diffResults.diffs && diffResults.diffs.length > 0 && !hasActualChanges(diffResults.diffs);
+
     return (
       <div className="result-card">
-        {diffResults.diffs && diffResults.diffs.length > 0 && (
+        {/* 只有当有实际修改时才显示DiffView */}
+        {hasDiffChanges && diffResults.diffs && (
           <DiffView
             diffs={diffResults.diffs}
             onAccept={handleAccept}
@@ -136,239 +110,82 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
           />
         )}
 
-        {diffResults.issues && diffResults.issues.length > 0 && (
-          <div className="issues-section">
-            <h4>发现的问题：</h4>
-            <ul>
-              {diffResults.issues.map((issue, index) => (
-                <li key={index} className="issue-item">
-                  <span className="issue-message">{issue.message}</span>
-                  {issue.suggestion && (
-                    <span className="issue-suggestion">建议：{issue.suggestion}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
+        {/* 检查结果 */}
+        {(diffResults.issues && diffResults.issues.length > 0) || (hasNoChanges && type === 'check') ? (
+          <UnifiedResultSection
+            title="🔍 检查结果"
+            items={diffResults.issues && diffResults.issues.length > 0 ?
+              diffResults.issues.map((issue: any, index: number) => ({
+                id: `issue-${index}`,
+                type: issue.category || 'general',
+                title: issue.message,
+                description: issue.message,
+                details: issue.suggestion ? `建议：${issue.suggestion}` : undefined,
+                severity: issue.severity || 'warning'
+              })) :
+              [{
+                id: 'no-issues',
+                type: 'success',
+                title: '检查完成，未发现问题',
+                description: '检查完成，未发现问题',
+                details: '您的文本符合规范，无需修改',
+                severity: 'info'
+              }]
+            }
+            sectionType="check"
+          />
+        ) : null}
+
+        {/* 润色结果 */}
+        {(diffResults.changes && diffResults.changes.length > 0) || (hasNoChanges && type === 'polish') ? (
+          <UnifiedResultSection
+            title="✨ 润色结果"
+            items={diffResults.changes && diffResults.changes.length > 0 ?
+              diffResults.changes.map((change: any, index: number) => ({
+                id: `change-${index}`,
+                type: change.type || 'polish',
+                title: change.description,
+                description: change.description,
+                details: change.reason ? `原因：${change.reason}` : undefined
+              })) :
+              [{
+                id: 'no-changes',
+                type: 'success',
+                title: '润色完成，未发现问题',
+                description: '润色完成，文本已优化',
+                details: '您的文本质量良好，无需进一步润色',
+                severity: 'info'
+              }]
+            }
+            sectionType="polish"
+          />
+        ) : null}
+
+        {/* 处理只有消息的情况（如fullTranslate） */}
+        {diffResults.message && !diffResults.diffs && !diffResults.issues && !diffResults.changes && (
+          <div className="result-message">
+            <p>{diffResults.message}</p>
+            {diffResults.sourceLang && diffResults.targetLang && (
+              <div className="language-info">
+                <span>翻译语言：{diffResults.sourceLang} → {diffResults.targetLang}</span>
+              </div>
+            )}
           </div>
         )}
 
-        {diffResults.changes && diffResults.changes.length > 0 && (
-          <div className="changes-section">
-            <h4>✨ 润色改进 ({diffResults.changes.length}项)</h4>
-            <div className="changes-list">
-              {diffResults.changes.map((change, index) => (
-                <div key={index} className="change-item">
-                  <div className="change-header">
-                    <span className={`change-type change-type-${change.type}`}>
-                      {getChangeTypeIcon(change.type)} {getChangeTypeName(change.type)}
-                    </span>
-                    <span className="change-description">{change.description}</span>
-                  </div>
-                  {change.reason && (
-                    <div className="change-reason">
-                      {change.reason}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* 重复的无修改处理已移除，统一使用UnifiedResultSection */}
       </div>
     );
   }
 
-
-
-  const getSeverityIcon = (severity: string) => {
-    switch (severity) {
-      case 'error':
-        return '❌';
-      case 'warning':
-        return '⚠️';
-      case 'info':
-        return 'ℹ️';
-      default:
-        return '📝';
-    }
-  };
-
-  const getTypeIcon = (itemType: string) => {
-    switch (itemType) {
-      case 'terminology':
-        return '📚';
-      case 'grammar':
-        return '📝';
-      case 'style':
-        return '🎨';
-      case 'consistency':
-        return '🔄';
-      case 'clarity':
-        return '💡';
-      case 'conciseness':
-        return '✂️';
-      case 'tone':
-        return '🎭';
-      case 'structure':
-        return '🏗️';
-      default:
-        return '📄';
-    }
-  };
-
-
-
-  const renderCheckResults = (items: CheckResultItem[]) => (
-    <div className="check-results">
-      <div className="results-header">
-        <span>🔍 检查结果 ({items.length})</span>
-      </div>
-      {items.map(item => (
-        <div key={item.id} className={`result-item check-item ${item.severity}`}>
-          <div
-            className="result-summary"
-            onClick={() => toggleExpanded(item.id)}
-          >
-            <span className="severity-icon">{getSeverityIcon(item.severity)}</span>
-            <span className="type-icon">{getTypeIcon(item.type)}</span>
-            <span className="message">{item.message}</span>
-            <span className="expand-icon">
-              {expandedItems.has(item.id) ? '▼' : '▶'}
-            </span>
-          </div>
-
-          {expandedItems.has(item.id) && (
-            <div className="result-details">
-              <div className="original-text">
-                <strong>原文：</strong> "{item.originalText}"
-              </div>
-              {item.suggestedText && (
-                <div className="suggested-text">
-                  <strong>建议：</strong> "{item.suggestedText}"
-                </div>
-              )}
-              {item.confidence && (
-                <div className="confidence">
-                  <strong>置信度：</strong> {Math.round(item.confidence * 100)}%
-                </div>
-              )}
-              {item.source && (
-                <div className="source">
-                  <strong>来源：</strong> {item.source}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-
-  const renderPolishResults = (items: PolishResultItem[]) => (
-    <div className="polish-results">
-      <div className="results-header">
-        <span>✨ 润色建议 ({items.length})</span>
-      </div>
-      {items.map(item => (
-        <div key={item.id} className="result-item polish-item">
-          <div
-            className="result-summary"
-            onClick={() => toggleExpanded(item.id)}
-          >
-            <span className="type-icon">{getTypeIcon(item.type)}</span>
-            <span className="explanation">{item.explanation}</span>
-            <span className="expand-icon">
-              {expandedItems.has(item.id) ? '▼' : '▶'}
-            </span>
-          </div>
-
-          {expandedItems.has(item.id) && (
-            <div className="result-details">
-              <div className="original-text">
-                <strong>原文：</strong> "{item.originalText}"
-              </div>
-              <div className="polished-text">
-                <strong>润色后：</strong> "{item.polishedText}"
-              </div>
-              <div className="confidence">
-                <strong>置信度：</strong> {Math.round(item.confidence * 100)}%
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-
-  const renderTranslateResults = (items: TranslateResultItem[]) => (
-    <div className="translate-results">
-      <div className="results-header">
-        <span>🌐 翻译结果 ({items.length})</span>
-      </div>
-      {items.map(item => (
-        <div key={item.id} className="result-item translate-item">
-          <div
-            className="result-summary"
-            onClick={() => toggleExpanded(item.id)}
-          >
-            <span className="language-pair">
-              {item.sourceLanguage} → {item.targetLanguage}
-            </span>
-            <span className="translated-preview">
-              {item.translatedText.length > 50
-                ? item.translatedText.substring(0, 50) + '...'
-                : item.translatedText
-              }
-            </span>
-            <span className="expand-icon">
-              {expandedItems.has(item.id) ? '▼' : '▶'}
-            </span>
-          </div>
-
-          {expandedItems.has(item.id) && (
-            <div className="result-details">
-              <div className="original-text">
-                <strong>原文：</strong> "{item.originalText}"
-              </div>
-              <div className="translated-text">
-                <strong>翻译：</strong> "{item.translatedText}"
-              </div>
-              {item.alternatives && item.alternatives.length > 0 && (
-                <div className="alternatives">
-                  <strong>备选翻译：</strong>
-                  <ul>
-                    {item.alternatives.map((alt, index) => (
-                      <li key={index}>"{alt}"</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <div className="confidence">
-                <strong>置信度：</strong> {Math.round(item.confidence * 100)}%
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-
-  // 处理旧格式的结果
-  const arrayResults = results as CheckResultItem[] | PolishResultItem[] | TranslateResultItem[];
-
-  if (Array.isArray(arrayResults) && arrayResults.length === 0) {
-    return (
-      <div className="result-card empty">
-        <p>没有发现问题或建议。</p>
-      </div>
-    );
-  }
+  // 处理旧的数组格式（向后兼容）
+  console.warn('ResultCard: 收到旧格式的结果数据，建议更新为新的diff格式');
 
   return (
     <div className="result-card">
-      {type === 'check' && renderCheckResults(arrayResults as CheckResultItem[])}
-      {type === 'polish' && renderPolishResults(arrayResults as PolishResultItem[])}
-      {type === 'translate' && renderTranslateResults(arrayResults as TranslateResultItem[])}
+      <div className="legacy-format-notice">
+        <p>⚠️ 检测到旧格式的结果数据，请更新后端以使用新的diff格式。</p>
+      </div>
     </div>
   );
 }

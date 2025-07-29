@@ -112,66 +112,53 @@ export function InputPanel({ selectedText, onExecute, disabled, authRequired = f
         </div>
       </div>
 
-      <div className="action-buttons">
-        {/* 主要操作按钮 */}
-        <div className="primary-actions">
+      {/* 紧凑型操作工具栏 */}
+      <div className="action-toolbar">
+        <div className="action-group">
           <button
-            className="action-button check-button"
+            className="compact-action-button check-button"
             onClick={handleCheck}
             disabled={disabled || !currentText.trim()}
-            title={hasSelectedText ? "检查选中文本的术语、语法和风格问题" : "检查输入文本的术语、语法和风格问题"}
+            title={hasSelectedText ? "检查选中文本" : "检查输入文本"}
           >
-            🔍 {hasSelectedText ? '检查选中' : '检查文本'}
+            🔍 检查
           </button>
 
           <button
-            className="action-button polish-button"
+            className="compact-action-button polish-button"
             onClick={handlePolish}
             disabled={disabled || !currentText.trim()}
-            title={hasSelectedText ? "润色选中文本，提高表达质量" : "润色输入文本，提高表达质量"}
+            title={hasSelectedText ? "润色选中文本" : "润色输入文本"}
           >
-            ✨ {hasSelectedText ? '润色选中' : '润色文本'}
+            ✨ 润色
           </button>
 
-          <button
-            className="action-button translate-button"
-            onClick={handleTranslate}
-            disabled={disabled || !currentText.trim()}
-            title={hasSelectedText ? "翻译选中文本" : "翻译输入文本并新建文档"}
-          >
-            🌐 {hasSelectedText ? '翻译选中' : '翻译文本'}
-          </button>
-        </div>
-
-        {/* 翻译语言选择 */}
-        <div className="translate-options">
-          <label className="language-label">翻译目标语言：</label>
-          <select
-            className="language-select"
-            value={targetLanguage}
-            onChange={(e) => setTargetLanguage(e.target.value)}
-            disabled={disabled}
-          >
-            <option value="en-US">🇺🇸 English</option>
-            <option value="zh-CN">🇨🇳 中文</option>
-            <option value="ja">🇯🇵 日语</option>
-            <option value="ko">🇰🇷 韩语</option>
-            <option value="fr">🇫🇷 法语</option>
-            <option value="de">🇩🇪 德语</option>
-            <option value="es">🇪🇸 西班牙语</option>
-            <option value="ru">🇷🇺 俄语</option>
-          </select>
-        </div>
-
-
-      </div>
-
-      <div className="tips">
-        <div className="tip-item">
-          💡 <strong>提示：</strong>在编辑器中选择文本后，可以直接使用功能按钮
-        </div>
-        <div className="tip-item">
-          ⚙️ 使用前请在设置中配置AI服务的API密钥和端点
+          <div className="translate-group">
+            <button
+              className="compact-action-button translate-button"
+              onClick={handleTranslate}
+              disabled={disabled || !currentText.trim()}
+              title={hasSelectedText ? "翻译选中文本" : "翻译输入文本"}
+            >
+              🌐 翻译
+            </button>
+            <select
+              className="inline-language-select"
+              value={targetLanguage}
+              onChange={(e) => setTargetLanguage(e.target.value)}
+              disabled={disabled}
+              title="选择翻译目标语言"
+            >
+              <option value="en-US">EN</option>
+              <option value="zh-CN">中文</option>
+              <option value="ja">日语</option>
+              <option value="ko">韩语</option>
+              <option value="fr">法语</option>
+              <option value="de">德语</option>
+              <option value="es">西语</option>
+              <option value="ru">俄语</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>

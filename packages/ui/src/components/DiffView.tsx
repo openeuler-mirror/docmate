@@ -67,15 +67,9 @@ const DiffView: React.FC<DiffViewProps> = ({
   // 检查是否有实际的修改
   const hasChanges = stats.totalChanges > 0;
 
+  // 如果没有修改，不显示DiffView，让ResultCard处理无修改的显示
   if (!hasChanges) {
-    return (
-      <div className={`diff-view no-changes ${className}`}>
-        <div className="diff-header">
-          <h3>{title}</h3>
-          <span className="no-changes-text">无需修改</span>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
