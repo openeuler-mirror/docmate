@@ -25,8 +25,22 @@ class Settings(BaseSettings):
         description="openEuler登录页面URL"
     )
     OPENEULER_USER_INFO_URL: str = Field(
-        default="https://id.openeuler.org/api/user/info",
+        default="https://id.openeuler.org/oneid/personal/center/user?community=openeuler",
         description="openEuler用户信息API URL"
+    )
+    OPENEULER_PERMISSION_URL: str = Field(
+        default="https://id.openeuler.org/oneid/user/permission",
+        description="openEuler用户权限API URL"
+    )
+
+    # openEuler Cookie配置
+    OPENEULER_SESSION_COOKIE: str = Field(
+        default="_Y_G_",
+        description="openEuler会话Cookie名称"
+    )
+    OPENEULER_TOKEN_COOKIE: str = Field(
+        default="_U_T_",
+        description="openEuler令牌Cookie名称（用作token参数）"
     )
 
     # AI服务配置

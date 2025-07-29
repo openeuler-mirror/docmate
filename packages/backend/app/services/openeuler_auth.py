@@ -15,8 +15,10 @@ class OpenEulerAuthService:
     def __init__(self):
         self.login_url = settings.OPENEULER_LOGIN_URL
         self.user_info_url = settings.OPENEULER_USER_INFO_URL
-        # openEuler的SSO Token Cookie名称
-        self.sso_cookie_name = "_U_T_"
+        self.permission_url = settings.OPENEULER_PERMISSION_URL
+        # openEuler的Cookie名称
+        self.session_cookie_name = settings.OPENEULER_SESSION_COOKIE  # _Y_G_
+        self.token_cookie_name = settings.OPENEULER_TOKEN_COOKIE      # _U_T_
 
     def get_login_url(self, redirect_uri: Optional[str] = None) -> str:
         """
@@ -36,35 +38,37 @@ class OpenEulerAuthService:
         logger.info("Generated login URL", extra={"redirect_uri": redirect_uri})
         return login_url
 
-    async def verify_sso_token(self, sso_token: str) -> bool:
+    async def verify_sso_credentials(self, session_cookie: str, token: Optional[str] = None) -> bool:
         """
-        验证SSO Token的有效性
+        验证SSO凭据的有效性
 
         Args:
-            sso_token: 从Cookie中获取的SSO Token
+            session_cookie: 会话Cookie (_Y_G_)
+            token: 令牌 (_U_T_，可选)
 
         Returns:
-            Token是否有效
+            凭据是否有效
         """
-        if not sso_token:
-            logger.warning("No SSO token provided")
+        if not session_cookie:
+            logger.warning("No session cookie provided")
             return False
 
         try:
-            # 尝试使用SSO Token获取用户信息来验证其有效性
-            user_info = await self.get_user_info_by_sso(sso_token)
+            # 尝试使用SSO凭据获取用户信息来验证其有效性
+            user_info = await self.get_user_info_by_sso(session_cookie, token)
             return user_info is not None
 
         except Exception as e:
-            logger.error("Error verifying SSO token", extra={"error": str(e)})
+            logger.error("Error verifying SSO credentials", extra={"error": str(e)})
             return False
 
-    async def get_user_info_by_sso(self, sso_token: str) -> Optional[UserInfo]:
+    async def get_user_info_by_sso(self, session_cookie: str, token: Optional[str] = None) -> Optional[UserInfo]:
         """
-        使用SSO Token获取用户信息
+        使用SSO Cookie和Token获取用户信息
 
         Args:
-            sso_token: SSO Token
+            session_cookie: 会话Cookie (_Y_G_)
+            token: 令牌 (_U_T_，可选)
 
         Returns:
             用户信息
@@ -82,15 +86,22 @@ class OpenEulerAuthService:
                 recipientId=12345
             )
 
+        # 构建请求头
         headers = {
             "Accept": "application/json",
-            "Cookie": f"{self.sso_cookie_name}={sso_token}",
+            "Content-Type": "application/json",
+            "Cookie": f"{self.session_cookie_name}={session_cookie}",
         }
+
+        # 如果有token，添加到请求头
+        if token:
+            headers["token"] = token
 
         try:
             async with httpx.AsyncClient() as client:
+                # 使用permission接口获取用户信息
                 response = await client.get(
-                    self.user_info_url,
+                    self.permission_url,
                     headers=headers,
                     timeout=30.0
                 )
@@ -108,6 +119,13 @@ class OpenEulerAuthService:
                     if not user_data:
                         logger.error("No user data in response")
                         return None
+
+                    # 提取新的token（如果存在）
+                    new_token = response.headers.get("token") or response.headers.get("Token")
+                    if new_token:
+                        logger.info("Received new token from server")
+                        # 这里可以添加token存储逻辑，或者返回给调用者处理
+                        user_data["new_token"] = new_token
 
                     # 转换为UserInfo模型
                     return UserInfo(
@@ -145,9 +163,9 @@ class OpenEulerAuthService:
         """
         logger.info("Clearing user authentication")
 
-        # 返回清除Cookie的指令
+        # 返回清除两个Cookie的指令
         return {
-            "Set-Cookie": f"{self.sso_cookie_name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure"
+            "Set-Cookie": f"{self.session_cookie_name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure, {self.token_cookie_name}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Secure"
         }
 
 

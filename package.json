@@ -22,7 +22,8 @@
     "translation"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onUri"
   ],
   "main": "./packages/extension/out/extension.js",
   "contributes": {
@@ -64,6 +65,16 @@
       {
         "command": "docmate.rewrite",
         "title": "Rewrite Text",
+        "category": "DocMate"
+      },
+      {
+        "command": "docmate.login",
+        "title": "Login to openEuler",
+        "category": "DocMate"
+      },
+      {
+        "command": "docmate.logout",
+        "title": "Logout",
         "category": "DocMate"
       }
     ],

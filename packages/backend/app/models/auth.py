@@ -4,9 +4,10 @@ from pydantic import BaseModel, Field
 
 class SSOTokenRequest(BaseModel):
     """
-    SSO Token请求模型
+    SSO认证请求模型
     """
-    sso_token: str = Field(..., description="从openEuler SSO Cookie中获取的_U_T_令牌")
+    session_cookie: str = Field(..., description="从openEuler SSO Cookie中获取的_Y_G_会话Cookie")
+    token: Optional[str] = Field(None, description="从openEuler SSO Cookie中获取的_U_T_令牌（可选）")
 
 
 class TokenResponse(BaseModel):
@@ -17,6 +18,7 @@ class TokenResponse(BaseModel):
     token_type: str = Field(default="bearer", description="令牌类型")
     expires_in: int = Field(..., description="过期时间(秒)")
     user_info: "UserInfo" = Field(..., description="用户信息")
+    new_token: Optional[str] = Field(None, description="新的一次性令牌（如果有）")
 
 
 class Identity(BaseModel):
@@ -65,6 +67,14 @@ class LoginUrlResponse(BaseModel):
     """
     login_url: str = Field(..., description="openEuler登录页面URL")
     instructions: str = Field(..., description="登录说明")
+
+
+class TokenRefreshRequest(BaseModel):
+    """
+    Token刷新请求模型
+    """
+    session_cookie: str = Field(..., description="会话Cookie (_Y_G_)")
+    current_token: str = Field(..., description="当前令牌 (_U_T_)")
 
 
 class LogoutRequest(BaseModel):

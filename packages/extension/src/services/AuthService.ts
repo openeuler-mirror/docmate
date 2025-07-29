@@ -32,6 +32,15 @@ export interface AuthResponse {
   token_type: string;
   expires_in: number;
   user_info: UserInfo;
+  new_token?: string;
+}
+
+/**
+ * SSO认证请求接口
+ */
+export interface SSOAuthRequest {
+  session_cookie: string;  // _Y_G_
+  token?: string;          // _U_T_
 }
 
 /**
@@ -44,9 +53,11 @@ export class AuthService {
   private status: AuthStatus = AuthStatus.NOT_AUTHENTICATED;
   private userInfo: UserInfo | null = null;
   private accessToken: string | null = null;
-  
+  private currentToken: string | null = null;  // 当前的一次性token
+
   private readonly TOKEN_KEY = 'docmate.auth.token';
   private readonly USER_INFO_KEY = 'docmate.auth.userInfo';
+  private readonly CURRENT_TOKEN_KEY = 'docmate.auth.currentToken';
 
   private constructor(secretStorage: vscode.SecretStorage) {
     this.secretStorage = secretStorage;
@@ -70,10 +81,12 @@ export class AuthService {
     try {
       const savedToken = await this.secretStorage.get(this.TOKEN_KEY);
       const savedUserInfo = await this.secretStorage.get(this.USER_INFO_KEY);
+      const savedCurrentToken = await this.secretStorage.get(this.CURRENT_TOKEN_KEY);
 
       if (savedToken && savedUserInfo) {
         this.accessToken = savedToken;
         this.userInfo = JSON.parse(savedUserInfo);
+        this.currentToken = savedCurrentToken || null;
         this.status = AuthStatus.AUTHENTICATED;
         console.log('AuthService: Restored authentication from storage');
       } else {
@@ -141,9 +154,9 @@ export class AuthService {
   }
 
   /**
-   * 使用SSO Token登录
+   * 使用SSO凭据登录
    */
-  public async loginWithSSOToken(ssoToken: string): Promise<AuthResponse> {
+  public async loginWithSSOCredentials(sessionCookie: string, token?: string): Promise<AuthResponse> {
     try {
       this.status = AuthStatus.AUTHENTICATING;
       
@@ -154,7 +167,8 @@ export class AuthService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sso_token: ssoToken
+          session_cookie: sessionCookie,
+          token: token
         })
       });
 
@@ -204,10 +218,12 @@ export class AuthService {
       // 清除本地存储
       await this.secretStorage.delete(this.TOKEN_KEY);
       await this.secretStorage.delete(this.USER_INFO_KEY);
-      
+      await this.secretStorage.delete(this.CURRENT_TOKEN_KEY);
+
       // 重置状态
       this.accessToken = null;
       this.userInfo = null;
+      this.currentToken = null;
       this.status = AuthStatus.NOT_AUTHENTICATED;
       
       console.log('AuthService: Logout successful');
@@ -215,6 +231,54 @@ export class AuthService {
       console.error('AuthService: Logout failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * 刷新一次性token
+   */
+  public async refreshToken(sessionCookie: string): Promise<void> {
+    if (!this.currentToken) {
+      throw new Error('No current token to refresh');
+    }
+
+    try {
+      const backendUrl = configService.getBackendBaseUrl();
+      const response = await fetch(`${backendUrl}/auth/refresh-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          session_cookie: sessionCookie,
+          current_token: this.currentToken
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Token refresh failed: ${response.statusText}`);
+      }
+
+      console.log('AuthService: Token refreshed successfully');
+    } catch (error) {
+      console.error('AuthService: Token refresh failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取当前token
+   */
+  public getCurrentToken(): string | null {
+    return this.currentToken;
+  }
+
+  /**
+   * 兼容性方法：使用SSO Token登录（旧接口）
+   * @deprecated 请使用 loginWithSSOCredentials 方法
+   */
+  public async loginWithSSOToken(ssoToken: string): Promise<AuthResponse> {
+    // 将旧的ssoToken作为sessionCookie处理
+    return this.loginWithSSOCredentials(ssoToken);
   }
 
   /**
@@ -255,7 +319,13 @@ export class AuthService {
     try {
       await this.secretStorage.store(this.TOKEN_KEY, authResponse.access_token);
       await this.secretStorage.store(this.USER_INFO_KEY, JSON.stringify(authResponse.user_info));
-      
+
+      // 保存新的一次性token（如果有）
+      if (authResponse.new_token) {
+        await this.secretStorage.store(this.CURRENT_TOKEN_KEY, authResponse.new_token);
+        this.currentToken = authResponse.new_token;
+      }
+
       this.accessToken = authResponse.access_token;
       this.userInfo = authResponse.user_info;
     } catch (error) {

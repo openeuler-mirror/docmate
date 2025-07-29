@@ -14,13 +14,13 @@ import {
   createError
 } from '@docmate/shared';
 import { AuthService, AuthStatus } from '../services/AuthService';
-import { AuthUIHelper } from '../services/AuthUIHelper';
+import { OAuthService } from '../services/OAuthService';
 import { BackendAIService } from '../services/BackendAIService';
 
 export class ActionController {
   private terminologyService: TerminologyService;
   private authService: AuthService | null = null;
-  private authUIHelper: AuthUIHelper | null = null;
+  private oauthService: OAuthService | null = null;
   private backendAIService: BackendAIService | null = null;
 
   constructor() {
@@ -36,7 +36,7 @@ export class ActionController {
    */
   public async initializeAuth(secretStorage: vscode.SecretStorage): Promise<void> {
     this.authService = AuthService.getInstance(secretStorage);
-    this.authUIHelper = new AuthUIHelper(this.authService);
+    this.oauthService = OAuthService.getInstance(this.authService);
     this.backendAIService = new BackendAIService(this.authService);
     await this.authService.initialize();
   }
@@ -102,11 +102,31 @@ export class ActionController {
    * 检查认证状态
    */
   private async ensureAuthenticated(): Promise<boolean> {
-    if (!this.authUIHelper) {
+    if (!this.authService) {
       throw createError('AUTH_NOT_INITIALIZED', 'Authentication service not initialized');
     }
 
-    return await this.authUIHelper.ensureAuthenticated();
+    // 检查是否已认证
+    if (this.authService.isAuthenticated()) {
+      // 验证Token是否仍然有效
+      const isValid = await this.authService.validateToken();
+      if (isValid) {
+        return true;
+      }
+    }
+
+    // 需要登录，使用OAuthService
+    if (!this.oauthService) {
+      throw createError('OAUTH_NOT_INITIALIZED', 'OAuth service not initialized');
+    }
+
+    try {
+      await this.oauthService.startLogin();
+      return this.authService.isAuthenticated();
+    } catch (error) {
+      console.error('ActionController: Login failed:', error);
+      return false;
+    }
   }
 
   /**
@@ -360,7 +380,7 @@ export class ActionController {
    * 处理认证命令
    */
   private async handleAuth(payload: any): Promise<any> {
-    if (!this.authService || !this.authUIHelper) {
+    if (!this.authService || !this.oauthService) {
       throw createError('AUTH_NOT_INITIALIZED', 'Authentication service not initialized');
     }
 
@@ -375,21 +395,78 @@ export class ActionController {
         };
 
       case 'login':
-        return await this.authUIHelper.showLoginDialog();
+        try {
+          await this.oauthService.startLogin();
+
+          if (this.authService.isAuthenticated()) {
+            const userInfo = this.authService.getUserInfo();
+            return {
+              success: true,
+              isAuthenticated: true,
+              status: 'authenticated',
+              userInfo: userInfo
+            };
+          } else {
+            return {
+              success: false,
+              isAuthenticated: false,
+              status: 'not_authenticated',
+              userInfo: null
+            };
+          }
+        } catch (error) {
+          throw createError('AUTH_FAILED', `Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
 
       case 'logout':
-        return await this.authUIHelper.showLogoutDialog();
+        try {
+          await this.authService.logout();
+          return {
+            success: true,
+            message: '已成功登出'
+          };
+        } catch (error) {
+          throw createError('LOGOUT_FAILED', `Logout failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
 
       case 'showStatus':
-        await this.authUIHelper.showAuthStatus();
+        const isAuthenticated = this.authService.isAuthenticated();
+        const userInfo = this.authService.getUserInfo();
+
+        if (isAuthenticated && userInfo) {
+          vscode.window.showInformationMessage(
+            `当前用户: ${userInfo.username}\n邮箱: ${userInfo.email}\n状态: 已登录`
+          );
+        } else {
+          vscode.window.showInformationMessage('当前未登录DocMate');
+        }
         return { status: 'shown' };
 
       case 'loginWithToken':
+        // 兼容旧的token登录方式
         if (!data || !data.token) {
           throw createError('INVALID_PAYLOAD', 'Token is required for login');
         }
         try {
           const authResponse = await this.authService.loginWithSSOToken(data.token);
+          return {
+            success: true,
+            userInfo: authResponse.user_info
+          };
+        } catch (error) {
+          throw createError('AUTH_FAILED', `Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+
+      case 'loginWithCredentials':
+        // 新的双重认证登录方式
+        if (!data || !data.sessionCookie) {
+          throw createError('INVALID_PAYLOAD', 'Session cookie is required for login');
+        }
+        try {
+          const authResponse = await this.authService.loginWithSSOCredentials(
+            data.sessionCookie,
+            data.token
+          );
           return {
             success: true,
             userInfo: authResponse.user_info

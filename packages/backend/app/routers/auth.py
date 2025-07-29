@@ -8,6 +8,7 @@ from app.models.auth import (
     SSOTokenRequest,
     TokenResponse,
     LoginUrlResponse,
+    TokenRefreshRequest,
     UserInfo
 )
 from app.services.openeuler_auth import openeuler_auth_service
@@ -57,25 +58,28 @@ async def get_login_url():
 @router.post("/login", response_model=TokenResponse)
 async def login(sso_request: SSOTokenRequest):
     """
-    使用SSO Token登录
+    使用SSO凭据登录
 
     Args:
-        sso_request: 包含SSO Token的请求
+        sso_request: 包含会话Cookie和令牌的请求
 
     Returns:
         包含访问令牌和用户信息的响应
     """
-    logger.info("Login request received with SSO token")
+    logger.info("Login request received with SSO credentials")
 
     try:
-        # 验证SSO Token并获取用户信息
-        user_info = await openeuler_auth_service.get_user_info_by_sso(sso_request.sso_token)
+        # 验证SSO凭据并获取用户信息
+        user_info = await openeuler_auth_service.get_user_info_by_sso(
+            sso_request.session_cookie,
+            sso_request.token
+        )
 
         if not user_info:
-            logger.error("Failed to get user info with SSO token")
+            logger.error("Failed to get user info with SSO credentials")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid SSO token or user not found"
+                detail="Invalid SSO credentials or user not found"
             )
 
         # 创建内部JWT令牌 - 使用openEuler UserInfo字段
@@ -108,6 +112,46 @@ async def login(sso_request: SSOTokenRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed"
+        )
+
+
+@router.post("/refresh-token")
+async def refresh_token(refresh_request: TokenRefreshRequest):
+    """
+    刷新一次性令牌
+
+    Args:
+        refresh_request: 包含会话Cookie和当前令牌的请求
+
+    Returns:
+        包含新令牌的响应
+    """
+    logger.info("Token refresh request received")
+
+    try:
+        # 使用当前凭据获取用户信息（这会触发新token的生成）
+        user_info = await openeuler_auth_service.get_user_info_by_sso(
+            refresh_request.session_cookie,
+            refresh_request.current_token
+        )
+
+        if not user_info:
+            logger.error("Failed to refresh token with current credentials")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials for token refresh"
+            )
+
+        logger.info("Token refreshed successfully")
+        return {"status": "success", "message": "Token refreshed"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Unexpected error during token refresh", extra={"error": str(e)})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Token refresh failed"
         )
 
 

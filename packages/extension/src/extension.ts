@@ -1,9 +1,21 @@
 import * as vscode from 'vscode';
 import { SidebarProvider } from './SidebarProvider';
 import { TextSource } from '@docmate/shared';
+import { AuthService } from './services/AuthService';
+import { OAuthService } from './services/OAuthService';
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('DocMate extension is now active!');
+
+  // 初始化认证服务
+  const authService = AuthService.getInstance(context.secrets);
+  await authService.initialize();
+
+  // 创建OAuth服务并注册URI处理器
+  const oauthService = OAuthService.getInstance(authService);
+  context.subscriptions.push(
+    vscode.window.registerUriHandler(oauthService)
+  );
 
   // 创建侧边栏提供者
   const sidebarProvider = new SidebarProvider(context.extensionUri);
@@ -20,7 +32,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // 注册命令
-  registerCommands(context, sidebarProvider);
+  registerCommands(context, sidebarProvider, authService, oauthService);
 
   // 监听配置变化
   context.subscriptions.push(
@@ -94,7 +106,7 @@ function executeTextOperation(
   }
 }
 
-function registerCommands(context: vscode.ExtensionContext, sidebarProvider: SidebarProvider) {
+function registerCommands(context: vscode.ExtensionContext, sidebarProvider: SidebarProvider, authService: AuthService, oauthService: OAuthService) {
   // 检查文档命令
   const checkCommand = vscode.commands.registerCommand('docmate.check', () => {
     executeTextOperation(result => {
@@ -172,7 +184,36 @@ function registerCommands(context: vscode.ExtensionContext, sidebarProvider: Sid
     });
   });
 
-  context.subscriptions.push(checkCommand, polishCommand, translateCommand, rewriteCommand);
+  // 登录命令 - 直接使用OAuthService
+  const loginCommand = vscode.commands.registerCommand('docmate.login', async () => {
+    try {
+      await oauthService.startLogin();
+
+      // 检查登录状态
+      if (authService.isAuthenticated()) {
+        const userInfo = authService.getUserInfo();
+        vscode.window.showInformationMessage(
+          `登录成功！欢迎，${userInfo?.username || '用户'}！`
+        );
+      }
+    } catch (error) {
+      console.error('Login command failed:', error);
+      vscode.window.showErrorMessage('登录失败，请重试');
+    }
+  });
+
+  // 登出命令
+  const logoutCommand = vscode.commands.registerCommand('docmate.logout', async () => {
+    try {
+      await authService.logout();
+      vscode.window.showInformationMessage('已成功登出');
+    } catch (error) {
+      console.error('Logout command failed:', error);
+      vscode.window.showErrorMessage('登出失败');
+    }
+  });
+
+  context.subscriptions.push(checkCommand, polishCommand, translateCommand, rewriteCommand, loginCommand, logoutCommand);
 }
 
 export function deactivate() {
