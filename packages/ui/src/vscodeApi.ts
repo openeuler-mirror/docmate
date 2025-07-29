@@ -1,4 +1,4 @@
-import { UICommand, HostResult, ExtendedUICommand } from '@docmate/shared';
+import { UICommand, HostResult } from '@docmate/shared';
 
 // VS Code API类型定义
 interface VSCodeApi {
@@ -41,7 +41,7 @@ class VSCodeApiWrapper {
   /**
    * 发送命令到扩展
    */
-  postMessage(command: UICommand | ExtendedUICommand): void {
+  postMessage(command: UICommand): void {
     console.log('vscodeApi: Sending message to extension:', command);
     this.vscodeApi.postMessage(command);
     console.log('vscodeApi: Message sent successfully');

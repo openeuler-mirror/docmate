@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ActionController } from './controllers/ActionController';
-import { UICommand, HostResult, ExtendedUICommand, ExtendedHostResult, isUICommand } from '@docmate/shared';
+import { UICommand, HostResult, isUICommand } from '@docmate/shared';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'docmate.sidebar';
@@ -62,7 +62,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   /**
    * 处理UI命令
    */
-  private async handleUICommand(command: UICommand | ExtendedUICommand): Promise<void> {
+  private async handleUICommand(command: UICommand): Promise<void> {
     console.log('SidebarProvider: Handling UI command:', command.command, 'with payload:', command.payload);
 
     try {
@@ -87,7 +87,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               diffs: result.diffs,
               issues: result.issues
             }
-          } as ExtendedHostResult);
+          } as HostResult);
           break;
         case 'polish':
           this.sendToWebview({
@@ -97,7 +97,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               diffs: result.diffs,
               changes: result.changes
             }
-          } as ExtendedHostResult);
+          } as HostResult);
           break;
         case 'translate':
           this.sendToWebview({
@@ -108,7 +108,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               sourceLang: result.sourceLang,
               targetLang: result.targetLang
             }
-          } as ExtendedHostResult);
+          } as HostResult);
           break;
         case 'fullTranslate':
           console.log('SidebarProvider: Handling fullTranslate result:', result);
@@ -124,7 +124,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
               conversationId: result.conversationId,
               conversation: command.payload.conversationHistory || []
             }
-          } as ExtendedHostResult);
+          } as HostResult);
           break;
         case 'applySuggestion':
           // applySuggestion命令已经在handleUICommand中执行了，这里只需要发送成功响应
@@ -165,7 +165,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   /**
    * 发送消息到webview
    */
-  private sendToWebview(message: HostResult | ExtendedHostResult): void {
+  private sendToWebview(message: HostResult): void {
     if (this._view) {
       this._view.webview.postMessage(message);
     }
@@ -197,7 +197,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           suggestedFileName: suggestedFileName,
           success: true
         }
-      } as ExtendedHostResult);
+      } as HostResult);
 
       // 提示用户保存文件
       if (suggestedFileName) {

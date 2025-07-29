@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChatMessage, DiffSegment, ExtendedUICommand } from '@docmate/shared';
+import { ChatMessage, DiffSegment, UICommand } from '@docmate/shared';
 import { vscodeApi } from '../vscodeApi';
 import DiffView from './DiffView';
 
@@ -83,14 +83,14 @@ const ChatView: React.FC<ChatViewProps> = ({
         conversationHistory: updatedMessages,
         originalText: originalText,
       },
-    } as ExtendedUICommand);
+    } as UICommand);
   };
 
   const handleAccept = (suggestion: string) => {
     vscodeApi.postMessage({
       command: 'applySuggestion',
       payload: { text: suggestion },
-    } as ExtendedUICommand);
+    } as UICommand);
     setCurrentDiff(null);
   };
 

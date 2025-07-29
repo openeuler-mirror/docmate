@@ -85,39 +85,3 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_password_hash(password: str) -> str:
-    """
-    生成密码哈希
-    
-    Args:
-        password: 明文密码
-        
-    Returns:
-        哈希后的密码
-    """
-    return pwd_context.hash(password)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    验证密码
-    
-    Args:
-        plain_password: 明文密码
-        hashed_password: 哈希密码
-        
-    Returns:
-        验证结果
-    """
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def generate_state() -> str:
-    """
-    生成OAuth状态参数
-    
-    Returns:
-        随机状态字符串
-    """
-    import secrets
-    return secrets.token_urlsafe(32)

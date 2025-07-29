@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
   HostResult,
-  ExtendedHostResult,
   ConversationItem,
   OperationState,
   generateId
@@ -78,7 +77,7 @@ export default function App() {
   /**
    * 处理来自扩展的消息
    */
-  const handleMessage = (message: HostResult | ExtendedHostResult) => {
+  const handleMessage = (message: HostResult) => {
     switch (message.command) {
       case 'renderResult':
         handleRenderResult(message as HostResult);
@@ -87,7 +86,7 @@ export default function App() {
       case 'renderPolishResult':
       case 'renderTranslateResult':
       case 'renderRewriteResult':
-        handleExtendedResult(message as ExtendedHostResult);
+        handleExtendedResult(message as HostResult);
         break;
       case 'error':
         handleError(message as HostResult);
@@ -143,7 +142,8 @@ export default function App() {
   /**
    * 处理扩展结果（新的diff格式）
    */
-  const handleExtendedResult = (message: ExtendedHostResult) => {
+  const handleExtendedResult = (message: HostResult) => {
+    if (!message.payload) return;
     const { type, diffs, issues, changes, sourceLang, targetLang, message: resultMessage, success } = message.payload;
 
     if (type) {

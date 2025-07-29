@@ -2,7 +2,7 @@ from datetime import timedelta
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
 from app.core.logger import get_logger
-from app.core.security import create_access_token, generate_state
+from app.core.security import create_access_token
 from app.core.dependencies import require_auth
 from app.models.auth import (
     SSOTokenRequest,

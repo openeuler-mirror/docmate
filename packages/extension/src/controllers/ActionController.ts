@@ -5,9 +5,6 @@ import {
 } from '@docmate/utils';
 import {
   AIServiceConfig,
-  CheckResultItem,
-  PolishResultItem,
-  TranslateResultItem,
   CheckResult,
   PolishResult,
   TranslateResult,
@@ -67,7 +64,7 @@ export class ActionController {
           break;
         case 'fullTranslate':
           console.log('ActionController: Executing fullTranslate command');
-          result = await this.handleFullTranslate(payload);
+          result = await this.handleTranslate({ ...payload, fullDocument: true });
           break;
         case 'rewrite':
           console.log('ActionController: Executing rewrite command');
@@ -163,8 +160,19 @@ export class ActionController {
   /**
    * 处理翻译命令 - 返回新的diff格式
    */
-  private async handleTranslate(payload: any): Promise<TranslateResult> {
-    const { text, options = {} } = payload;
+  private async handleTranslate(payload: any): Promise<TranslateResult | FullTranslateResult> {
+    const { text: initialText, options = {}, fullDocument } = payload;
+    let text = initialText;
+
+    // 如果是全文翻译，获取编辑器中的所有文本
+    if (fullDocument) {
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        text = editor.document.getText();
+      } else {
+        throw createError('NO_ACTIVE_EDITOR', 'No active editor found for full document translation');
+      }
+    }
 
     if (!text || typeof text !== 'string') {
       throw createError('INVALID_TEXT', 'Text is required for translate operation');
@@ -187,26 +195,6 @@ export class ActionController {
     return await this.backendAIService.translate(text, options);
   }
 
-  /**
-   * 处理全文翻译命令 - 返回完整翻译文本，不使用diff格式
-   */
-  private async handleFullTranslate(payload: any): Promise<FullTranslateResult> {
-    const { text, options = {}, fileName } = payload;
-
-    if (!text || typeof text !== 'string') {
-      throw createError('INVALID_TEXT', 'Text is required for translate operation');
-    }
-
-    if (!options.targetLanguage) {
-      throw createError('MISSING_TARGET_LANGUAGE', 'Target language is required for translation');
-    }
-
-    // 使用BackendAIService
-    if (!this.backendAIService) {
-      throw createError('BACKEND_AI_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
-    }
-    return await this.backendAIService.translate(text, options);
-  }
 
   /**
    * 处理改写命令
@@ -458,19 +446,6 @@ export class ActionController {
 
     // 设置后端基础URL
     configService.setBackendBaseUrl(backendBaseUrl);
-  }
-
-  /**
-   * 获取当前文件名
-   */
-  private getCurrentFileName(): string | undefined {
-    const editor = vscode.window.activeTextEditor;
-    if (editor && editor.document.fileName) {
-      const path = editor.document.fileName;
-      const fileName = path.split(/[/\\]/).pop();
-      return fileName;
-    }
-    return undefined;
   }
 
   /**

@@ -6,23 +6,36 @@ export interface BaseCommand {
 
 // UI发往Host的命令接口
 export interface UICommand extends BaseCommand {
-  command: 'check' | 'polish' | 'translate' | 'refresh' | 'settings' | 'auth';
+  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings' | 'auth';
   payload: {
     text?: string;
     options?: Record<string, any>;
     action?: string;
     data?: any;
+    conversationHistory?: ChatMessage[];
+    suggestion?: string;
+    originalText?: string;
   };
 }
 
 // Host发往UI的结果接口
 export interface HostResult extends BaseCommand {
-  command: 'renderResult' | 'error' | 'loading' | 'ready' | 'auth';
+  command: 'renderResult' | 'error' | 'loading' | 'ready' | 'auth' | 'renderCheckResult' | 'renderPolishResult' | 'renderTranslateResult' | 'renderRewriteResult';
   payload?: {
-    type?: 'check' | 'polish' | 'translate';
+    type?: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
     data?: any;
     error?: string;
     loading?: boolean;
+    diffs?: DiffSegment[];
+    issues?: any[];
+    changes?: any[];
+    sourceLang?: string;
+    targetLang?: string;
+    conversationId?: string;
+    conversation?: ChatMessage[];
+    message?: string;
+    suggestedFileName?: string;
+    success?: boolean;
   };
   result?: any;
 }
@@ -151,15 +164,6 @@ export interface ConversationItem {
   };
 }
 
-// 统计信息
-export interface Statistics {
-  totalChecks: number;
-  totalPolishes: number;
-  totalTranslations: number;
-  issuesFound: number;
-  issuesFixed: number;
-  lastUsed: number;
-}
 
 // 错误类型
 export interface DocMateError {
@@ -288,37 +292,3 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-/**
- * 扩展的UI命令接口，支持新的rewrite和applySuggestion命令
- */
-export interface ExtendedUICommand extends BaseCommand {
-  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings';
-  payload: {
-    text?: string;
-    options?: Record<string, any>;
-    conversationHistory?: ChatMessage[];
-    suggestion?: string;
-  };
-}
-
-/**
- * 扩展的Host结果接口，支持diff结果渲染
- */
-export interface ExtendedHostResult extends BaseCommand {
-  command: 'renderCheckResult' | 'renderPolishResult' | 'renderTranslateResult' | 'renderRewriteResult' | 'error' | 'loading' | 'ready';
-  payload: {
-    type?: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
-    diffs?: DiffSegment[];
-    issues?: any[];
-    changes?: any[];
-    sourceLang?: string;
-    targetLang?: string;
-    conversationId?: string;
-    conversation?: ChatMessage[];
-    error?: string;
-    loading?: boolean;
-    message?: string;
-    suggestedFileName?: string;
-    success?: boolean;
-  };
-}
