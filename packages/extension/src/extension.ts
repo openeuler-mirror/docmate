@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { SidebarProvider } from './SidebarProvider';
+import { TextSource } from '@docmate/shared';
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('DocMate extension is now active!');
@@ -40,50 +41,83 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 }
 
-function withValidSelection(
-  callback: (selectedText: string) => void,
-  emptyWarningMessage = '请先选择要处理的文本'
-) {
+/**
+ * 文本处理结果
+ */
+interface TextProcessingResult {
+  text: string;
+  source: TextSource;
+}
+
+/**
+ * 智能获取文本进行处理
+ * 优先使用选中文本，如无选择则使用全文
+ */
+function getTextForProcessing(): TextProcessingResult | null {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     vscode.window.showWarningMessage('请先打开一个文档');
-    return;
+    return null;
   }
 
   const selectedText = editor.document.getText(editor.selection);
-  if (!selectedText.trim()) {
-    vscode.window.showWarningMessage(emptyWarningMessage);
-    return;
-  }
 
-  callback(selectedText);
+  if (selectedText.trim()) {
+    // 有选中文本，使用选中文本
+    return {
+      text: selectedText,
+      source: 'selected'
+    };
+  } else {
+    // 无选中文本，使用全文
+    const fullText = editor.document.getText();
+    if (!fullText.trim()) {
+      vscode.window.showWarningMessage('文档内容为空');
+      return null;
+    }
+    return {
+      text: fullText,
+      source: 'full'
+    };
+  }
+}
+
+/**
+ * 执行文本处理操作的通用函数
+ */
+function executeTextOperation(
+  callback: (result: TextProcessingResult) => void | Promise<void>
+) {
+  const result = getTextForProcessing();
+  if (result) {
+    callback(result);
+  }
 }
 
 function registerCommands(context: vscode.ExtensionContext, sidebarProvider: SidebarProvider) {
   // 检查文档命令
   const checkCommand = vscode.commands.registerCommand('docmate.check', () => {
-    withValidSelection(
-      selectedText => {
-        sidebarProvider.executeCommand('check', { text: selectedText });
-      },
-      '请先选择要检查的文本'
-    );
+    executeTextOperation(result => {
+      sidebarProvider.executeCommand('check', {
+        text: result.text,
+        textSource: result.source
+      });
+    });
   });
 
   // 润色文本命令
   const polishCommand = vscode.commands.registerCommand('docmate.polish', () => {
-    withValidSelection(
-      selectedText => {
-        sidebarProvider.executeCommand('polish', { text: selectedText });
-      },
-      '请先选择要润色的文本'
-    );
+    executeTextOperation(result => {
+      sidebarProvider.executeCommand('polish', {
+        text: result.text,
+        textSource: result.source
+      });
+    });
   });
 
   // 翻译文本命令
   const translateCommand = vscode.commands.registerCommand('docmate.translate', () => {
-    withValidSelection(
-      async selectedText => {
+    executeTextOperation(async result => {
       // 询问目标语言
       const targetLanguage = await vscode.window.showQuickPick(
         [
@@ -100,22 +134,20 @@ function registerCommands(context: vscode.ExtensionContext, sidebarProvider: Sid
       }
 
       await sidebarProvider.executeCommand('translate', {
-        text: selectedText,
+        text: result.text,
+        textSource: result.source,
         options: { targetLanguage: targetLanguage.value },
       });
-    },
-      '请先选择要翻译的文本'
-    );
+    });
   });
 
   // 改写文本命令
   const rewriteCommand = vscode.commands.registerCommand('docmate.rewrite', () => {
-    withValidSelection(
-      async selectedText => {
+    executeTextOperation(async result => {
       // 询问改写指令
       const instruction = await vscode.window.showInputBox({
         prompt: '请输入改写指令（例如：让这段文字更简洁、改为更正式的语调等）',
-        placeHolder: '描述您希望如何改写选中的文本...',
+        placeHolder: `描述您希望如何改写${result.source === 'selected' ? '选中的文本' : '全文'}...`,
         value: '',
         validateInput: value => {
           if (!value.trim()) {
@@ -133,12 +165,11 @@ function registerCommands(context: vscode.ExtensionContext, sidebarProvider: Sid
       await vscode.commands.executeCommand('docmate.sidebar.focus');
       await sidebarProvider.executeCommand('rewrite', {
         text: instruction,
-        originalText: selectedText,
+        originalText: result.text,
+        textSource: result.source,
         conversationHistory: [],
       });
-    },
-      '请先选择要改写的文本'
-    );
+    });
   });
 
   context.subscriptions.push(checkCommand, polishCommand, translateCommand, rewriteCommand);

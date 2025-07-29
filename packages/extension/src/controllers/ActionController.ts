@@ -113,9 +113,19 @@ export class ActionController {
    * 处理检查命令 - 返回新的diff格式
    */
   private async handleCheck(payload: any): Promise<CheckResult> {
-    const { text, options = {} } = payload;
+    let { text, textSource, options = {} } = payload;
 
-    if (!text || typeof text !== 'string') {
+    // 如果没有传入文本，自动获取全文
+    if (!text || !text.trim()) {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        throw createError('NO_ACTIVE_EDITOR', 'No active editor found');
+      }
+      text = editor.document.getText();
+      textSource = 'full';
+    }
+
+    if (!text || typeof text !== 'string' || !text.trim()) {
       throw createError('INVALID_TEXT', 'Text is required for check operation');
     }
 
@@ -129,17 +139,31 @@ export class ActionController {
       throw createError('BACKEND_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
     }
 
-    // 使用后端AI服务
-    return await this.backendAIService.check(text, options);
+    // 使用后端AI服务，传递文本来源信息
+    const result = await this.backendAIService.check(text, { ...options, textSource });
+    return {
+      ...result,
+      textSource
+    };
   }
 
   /**
    * 处理润色命令 - 返回新的diff格式
    */
   private async handlePolish(payload: any): Promise<PolishResult> {
-    const { text, options = {} } = payload;
+    let { text, textSource, options = {} } = payload;
 
-    if (!text || typeof text !== 'string') {
+    // 如果没有传入文本，自动获取全文
+    if (!text || !text.trim()) {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        throw createError('NO_ACTIVE_EDITOR', 'No active editor found');
+      }
+      text = editor.document.getText();
+      textSource = 'full';
+    }
+
+    if (!text || typeof text !== 'string' || !text.trim()) {
       throw createError('INVALID_TEXT', 'Text is required for polish operation');
     }
 
@@ -153,28 +177,47 @@ export class ActionController {
       throw createError('BACKEND_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
     }
 
-    // 使用后端AI服务
-    return await this.backendAIService.polish(text, options);
+    // 使用后端AI服务，传递文本来源信息
+    const result = await this.backendAIService.polish(text, { ...options, textSource });
+    return {
+      ...result,
+      textSource
+    };
   }
 
   /**
    * 处理翻译命令 - 返回新的diff格式
    */
   private async handleTranslate(payload: any): Promise<TranslateResult | FullTranslateResult> {
-    const { text: initialText, options = {}, fullDocument } = payload;
-    let text = initialText;
+    let { text, textSource, options = {}, fullDocument } = payload;
 
-    // 如果是全文翻译，获取编辑器中的所有文本
-    if (fullDocument) {
+    // 统一文本处理逻辑
+    let finalText = text;
+    let isFullDocument = fullDocument || textSource === 'full';
+
+    // 如果没有传入文本，自动获取全文
+    if (!text || !text.trim()) {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        throw createError('NO_ACTIVE_EDITOR', 'No active editor found');
+      }
+      finalText = editor.document.getText();
+      textSource = 'full';
+      isFullDocument = true;
+    }
+
+    // 兼容旧的fullDocument逻辑
+    if (fullDocument && !finalText) {
       const editor = vscode.window.activeTextEditor;
       if (editor) {
-        text = editor.document.getText();
+        finalText = editor.document.getText();
+        isFullDocument = true;
       } else {
         throw createError('NO_ACTIVE_EDITOR', 'No active editor found for full document translation');
       }
     }
 
-    if (!text || typeof text !== 'string') {
+    if (!finalText || typeof finalText !== 'string' || !finalText.trim()) {
       throw createError('INVALID_TEXT', 'Text is required for translate operation');
     }
 
@@ -192,7 +235,20 @@ export class ActionController {
     if (!this.backendAIService) {
       throw createError('BACKEND_AI_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
     }
-    return await this.backendAIService.translate(text, options);
+
+    // 根据文本来源决定处理方式
+    if (isFullDocument) {
+      // 全文翻译，返回FullTranslateResult
+      const result = await this.backendAIService.translate(finalText, options);
+      return {
+        ...result,
+        isFullDocument: true,
+        textSource: textSource || 'full'
+      } as FullTranslateResult;
+    } else {
+      // 选中文本翻译，返回TranslateResult
+      return await this.backendAIService.translate(finalText, options);
+    }
   }
 
 
@@ -200,17 +256,43 @@ export class ActionController {
    * 处理改写命令
    */
   private async handleRewrite(payload: any): Promise<RewriteResult> {
-    const { text, conversationHistory = [], originalText } = payload;
+    let { text, textSource, conversationHistory = [], originalText } = payload;
 
     if (!text || typeof text !== 'string') {
       throw createError('INVALID_TEXT', 'Text is required for rewrite operation');
+    }
+
+    // 如果没有传入原始文本，自动获取全文
+    if (!originalText || !originalText.trim()) {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        throw createError('NO_ACTIVE_EDITOR', 'No active editor found');
+      }
+      originalText = editor.document.getText();
+      textSource = 'full';
+    }
+
+    // 检查认证状态
+    const isAuthenticated = await this.ensureAuthenticated();
+    if (!isAuthenticated) {
+      throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
     }
 
     // 使用BackendAIService
     if (!this.backendAIService) {
       throw createError('BACKEND_AI_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
     }
-    return await this.backendAIService.rewrite(text, { conversationHistory, originalText });
+
+    const result = await this.backendAIService.rewrite(text, {
+      conversationHistory,
+      originalText,
+      textSource
+    });
+
+    return {
+      ...result,
+      textSource
+    };
   }
 
   /**

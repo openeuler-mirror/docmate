@@ -13,7 +13,6 @@ export function InputPanel({ selectedText, onExecute, disabled, authRequired = f
 
   // 判断是否有选中文本
   const hasSelectedText = selectedText && selectedText.trim().length > 0;
-  const currentText = hasSelectedText ? selectedText : inputText;
 
   // 生成选中文本的引用显示
   const getSelectedTextReference = () => {
@@ -23,36 +22,33 @@ export function InputPanel({ selectedText, onExecute, disabled, authRequired = f
   };
 
   const handleCheck = () => {
-    if (!currentText.trim()) return;
-    onExecute('check', currentText);
+    // 如果有选中文本，使用选中文本；否则传递空字符串让后端处理全文
+    const textToProcess = hasSelectedText ? selectedText : '';
+    onExecute('check', textToProcess);
   };
 
   const handlePolish = () => {
-    if (!currentText.trim()) return;
-    onExecute('polish', currentText);
+    // 如果有选中文本，使用选中文本；否则传递空字符串让后端处理全文
+    const textToProcess = hasSelectedText ? selectedText : '';
+    onExecute('polish', textToProcess);
   };
 
   const handleTranslate = () => {
-    if (!currentText.trim()) return;
-    // 如果有选中文本，使用普通翻译；如果是全文，使用fullTranslate（会新建文档）
-    const command = hasSelectedText ? 'translate' : 'fullTranslate';
-    onExecute(command, currentText, { targetLanguage });
+    // 如果有选中文本，使用选中文本；否则传递空字符串让后端处理全文
+    const textToProcess = hasSelectedText ? selectedText : '';
+    onExecute('translate', textToProcess, { targetLanguage });
   };
 
   const handleSubmit = () => {
     if (!inputText.trim()) return;
 
-    if (hasSelectedText) {
-      // 有选中文本时，将输入作为改写指令
-      onExecute('rewrite', inputText, {
-        originalText: selectedText,
-        conversationHistory: []
-      });
-    } else {
-      // 没有选中文本时，将输入作为要处理的文本
-      // 这种情况下用户应该使用上面的按钮
-      return;
-    }
+    // 文本框专门用于改写指令
+    // 如果有选中文本，改写选中文本；否则改写全文
+    const originalText = hasSelectedText ? selectedText : '';
+    onExecute('rewrite', inputText, {
+      originalText: originalText,
+      conversationHistory: []
+    });
 
     setInputText('');
   };
@@ -88,10 +84,10 @@ export function InputPanel({ selectedText, onExecute, disabled, authRequired = f
             placeholder={
               hasSelectedText
                 ? "输入改写指令，例如：让这段文字更简洁、改为更正式的语调..."
-                : "输入要处理的文本，或在编辑器中选择文本后输入改写指令..."
+                : "输入改写指令来改写全文，或直接使用下方按钮进行全文检查、润色、翻译。选中文字后可以对部分文字进行操作..."
             }
             disabled={disabled}
-            rows={hasSelectedText ? 2 : 4}
+            rows={2}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && inputText.trim()) {
                 e.preventDefault();
@@ -99,16 +95,14 @@ export function InputPanel({ selectedText, onExecute, disabled, authRequired = f
               }
             }}
           />
-          {hasSelectedText && (
-            <button
-              className="submit-button"
-              onClick={handleSubmit}
-              disabled={disabled || !inputText.trim()}
-              title="发送改写指令"
-            >
-              💬 改写
-            </button>
-          )}
+          <button
+            className="submit-button"
+            onClick={handleSubmit}
+            disabled={disabled || !inputText.trim()}
+            title={hasSelectedText ? "改写选中文本" : "改写全文"}
+          >
+            💬 改写
+          </button>
         </div>
       </div>
 
@@ -118,8 +112,8 @@ export function InputPanel({ selectedText, onExecute, disabled, authRequired = f
           <button
             className="compact-action-button check-button"
             onClick={handleCheck}
-            disabled={disabled || !currentText.trim()}
-            title={hasSelectedText ? "检查选中文本" : "检查输入文本"}
+            disabled={disabled}
+            title={hasSelectedText ? "检查选中文本" : "检查全文"}
           >
             🔍 检查
           </button>
@@ -127,8 +121,8 @@ export function InputPanel({ selectedText, onExecute, disabled, authRequired = f
           <button
             className="compact-action-button polish-button"
             onClick={handlePolish}
-            disabled={disabled || !currentText.trim()}
-            title={hasSelectedText ? "润色选中文本" : "润色输入文本"}
+            disabled={disabled}
+            title={hasSelectedText ? "润色选中文本" : "润色全文"}
           >
             ✨ 润色
           </button>
@@ -137,8 +131,8 @@ export function InputPanel({ selectedText, onExecute, disabled, authRequired = f
             <button
               className="compact-action-button translate-button"
               onClick={handleTranslate}
-              disabled={disabled || !currentText.trim()}
-              title={hasSelectedText ? "翻译选中文本" : "翻译输入文本"}
+              disabled={disabled}
+              title={hasSelectedText ? "翻译选中文本" : "翻译全文"}
             >
               🌐 翻译
             </button>

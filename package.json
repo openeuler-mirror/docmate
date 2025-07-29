@@ -71,23 +71,18 @@
       "editor/context": [
         {
           "command": "docmate.check",
-          "when": "editorHasSelection",
           "group": "docmate"
         },
         {
           "command": "docmate.polish",
-          "when": "editorHasSelection",
           "group": "docmate"
         },
         {
           "command": "docmate.translate",
-          "when": "editorHasSelection",
           "group": "docmate"
-        }
-        ,
+        },
         {
           "command": "docmate.rewrite",
-          "when": "editorHasSelection",
           "group": "docmate"
         }
       ]

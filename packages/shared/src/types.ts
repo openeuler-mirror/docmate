@@ -4,11 +4,15 @@ export interface BaseCommand {
   payload?: any;
 }
 
+// 文本来源类型
+export type TextSource = 'selected' | 'full';
+
 // UI发往Host的命令接口
 export interface UICommand extends BaseCommand {
   command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings' | 'auth';
   payload: {
     text?: string;
+    textSource?: TextSource;
     options?: Record<string, any>;
     action?: string;
     data?: any;
@@ -246,6 +250,7 @@ export interface CheckResult {
     suggestion: string;
     range: [number, number];
   }[];
+  textSource?: TextSource;
 }
 
 /**
@@ -253,6 +258,7 @@ export interface CheckResult {
  */
 export interface PolishResult {
   diffs: DiffSegment[];
+  textSource?: TextSource;
 }
 
 /**
@@ -262,6 +268,7 @@ export interface TranslateResult {
   diffs: DiffSegment[];
   sourceLang: string;
   targetLang: string;
+  textSource?: TextSource;
 }
 
 /**
@@ -273,6 +280,8 @@ export interface FullTranslateResult {
   targetLang: string;
   originalFileName?: string;
   suggestedFileName?: string;
+  isFullDocument?: boolean;
+  textSource?: TextSource;
 }
 
 /**
@@ -281,6 +290,7 @@ export interface FullTranslateResult {
 export interface RewriteResult {
   diffs: DiffSegment[];
   conversationId: string; // 用于跟踪连续对话
+  textSource?: TextSource;
 }
 
 /**
