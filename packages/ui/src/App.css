@@ -1253,3 +1253,250 @@ body {
   margin-top: 2px;
   border-left: 2px solid var(--vscode-panel-border);
 }
+
+/* 配置提供者样式 */
+.config-provider {
+  padding: 20px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.config-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.config-header h2 {
+  color: var(--vscode-foreground);
+  margin-bottom: 10px;
+}
+
+.config-header p {
+  color: var(--vscode-descriptionForeground);
+  font-size: 14px;
+}
+
+.config-form {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--vscode-foreground);
+  font-weight: 500;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.form-group input.error {
+  border-color: var(--vscode-errorForeground);
+}
+
+.api-key-input {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.api-key-input input {
+  flex: 1;
+  padding-right: 40px;
+}
+
+.toggle-visibility {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 16px;
+}
+
+.toggle-visibility:hover {
+  color: var(--vscode-foreground);
+}
+
+.error-message {
+  display: block;
+  color: var(--vscode-errorForeground);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.help-text {
+  display: block;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.test-button,
+.save-button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.test-button {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.test-button:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.save-button {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.save-button:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.test-button:disabled,
+.save-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.config-help {
+  background: var(--vscode-textBlockQuote-background);
+  border-left: 4px solid var(--vscode-textBlockQuote-border);
+  padding: 16px;
+  border-radius: 4px;
+}
+
+.config-help h3 {
+  color: var(--vscode-foreground);
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.config-help ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.config-help li {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+/* 改进的diff显示样式 - 移除内部边框 */
+.diff-section {
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.diff-section-header {
+  background: var(--vscode-editor-background);
+  padding: 8px 12px;
+  font-weight: 500;
+  border-top: 2px solid var(--vscode-panel-border);
+}
+
+.diff-section-title {
+  color: var(--vscode-foreground);
+  font-size: 14px;
+}
+
+.original-section .diff-section-header {
+  background: var(--vscode-diffEditor-removedTextBackground);
+  border-top-color: var(--vscode-diffEditor-removedTextBackground);
+}
+
+.modified-section .diff-section-header {
+  background: var(--vscode-diffEditor-insertedTextBackground);
+  border-top-color: var(--vscode-diffEditor-insertedTextBackground);
+}
+
+.diff-text {
+  padding: 12px;
+  line-height: 1.6;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+  background: var(--vscode-editor-background);
+  border-left: 2px solid var(--vscode-panel-border);
+  border-right: 2px solid var(--vscode-panel-border);
+  border-bottom: 2px solid var(--vscode-panel-border);
+}
+
+.original-section .diff-text {
+  border-left-color: var(--vscode-diffEditor-removedTextBackground);
+  border-right-color: var(--vscode-diffEditor-removedTextBackground);
+  border-bottom-color: var(--vscode-diffEditor-removedTextBackground);
+}
+
+.modified-section .diff-text {
+  border-left-color: var(--vscode-diffEditor-insertedTextBackground);
+  border-right-color: var(--vscode-diffEditor-insertedTextBackground);
+  border-bottom-color: var(--vscode-diffEditor-insertedTextBackground);
+}
+
+.diff-segment.deleted {
+  background: var(--vscode-diffEditor-removedTextBackground);
+  color: var(--vscode-diffEditor-removedTextForeground);
+  text-decoration: line-through;
+  padding: 2px 4px;
+  border-radius: 3px;
+  margin: 0 1px;
+}
+
+.diff-segment.inserted {
+  background: var(--vscode-diffEditor-insertedTextBackground);
+  color: var(--vscode-diffEditor-insertedTextForeground);
+  padding: 2px 4px;
+  border-radius: 3px;
+  margin: 0 1px;
+}
+
+.diff-segment.unchanged {
+  color: var(--vscode-foreground);
+}
+
+/* 配置检查样式 */
+.config-checking {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+  color: var(--vscode-descriptionForeground);
+}

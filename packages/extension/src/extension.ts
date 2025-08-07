@@ -3,9 +3,13 @@ import { SidebarProvider } from './SidebarProvider';
 import { TextSource } from '@docmate/shared';
 import { AuthService } from './services/AuthService';
 import { OAuthService } from './services/OAuthService';
+import { userConfigService } from './services/UserConfigService';
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('DocMate extension is now active!');
+
+  // 初始化用户配置服务
+  userConfigService.initialize(context);
 
   // 初始化认证服务
   const authService = AuthService.getInstance(context.secrets);

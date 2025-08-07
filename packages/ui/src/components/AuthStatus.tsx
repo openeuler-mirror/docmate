@@ -21,28 +21,29 @@ export function AuthStatus({ onAuthChange }: AuthStatusProps) {
     status: 'not_authenticated',
     userInfo: null
   });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading] = useState(false); // setIsLoading暂时不用
 
-  // 检查认证状态
-  const checkAuthStatus = async () => {
-    try {
-      setIsLoading(true);
-      vscodeApi.postMessage({
-        command: 'auth',
-        payload: { action: 'status' }
-      });
-    } catch (error) {
-      console.error('Failed to check auth status:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // 检查认证状态 - 暂时注释掉，因为不再需要认证
+  // const checkAuthStatus = async () => {
+  //   try {
+  //     setIsLoading(true);
+  //     vscodeApi.postMessage({
+  //       command: 'auth',
+  //       payload: { action: 'status' }
+  //     });
+  //   } catch (error) {
+  //     console.error('Failed to check auth status:', error);
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // };
 
   // 处理登录
   const handleLogin = () => {
+    // 显示登录功能暂未实现的提示
     vscodeApi.postMessage({
       command: 'auth',
-      payload: { action: 'login' }
+      payload: { action: 'showNotImplemented' }
     });
   };
 
@@ -84,10 +85,10 @@ export function AuthStatus({ onAuthChange }: AuthStatusProps) {
     return unsubscribe;
   }, []);
 
-  // 初始检查认证状态 - 只在组件挂载时执行一次
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
+  // 初始检查认证状态 - 暂时注释掉，因为不再需要认证
+  // useEffect(() => {
+  //   checkAuthStatus();
+  // }, []);
 
   if (isLoading) {
     return (
@@ -128,12 +129,12 @@ export function AuthStatus({ onAuthChange }: AuthStatusProps) {
   return (
     <div className="auth-status not-authenticated">
       <div className="auth-message">
-        <span>需要登录openEuler账户才能使用AI功能</span>
+        <span>请登录openEuler账户后使用</span>
       </div>
-      <button 
-        className="auth-button login" 
+      <button
+        className="auth-button login"
         onClick={handleLogin}
-        title="登录openEuler账户"
+        title="登录功能暂未实现"
       >
         立即登录
       </button>

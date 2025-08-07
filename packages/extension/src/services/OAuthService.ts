@@ -12,6 +12,10 @@ export class OAuthService implements vscode.UriHandler {
   private authResolve: ((value: void | PromiseLike<void>) => void) | null = null;
   private authReject: ((reason?: any) => void) | null = null;
 
+  // openEuler OAuth配置
+  private static readonly CLIENT_ID = '655d637668e3addd8ee560cb';
+  private static readonly LOGIN_BASE_URL = 'https://id.openeuler.org/login';
+
   private constructor(authService: AuthService) {
     this.authService = authService;
   }
@@ -73,14 +77,13 @@ export class OAuthService implements vscode.UriHandler {
         this.authReject = reject;
       });
 
-      // 获取登录URL
-      const loginUrl = await this.authService.getLoginUrl();
-      
-      // 构建带回调的登录URL
+      // 构建完整的登录URL，包含client_id和redirect_uri
       const callbackUri = this.getCallbackUri();
-      const fullLoginUrl = `${loginUrl}?redirect_uri=${encodeURIComponent(callbackUri)}`;
 
-      console.log('OAuthService: Opening login URL:', fullLoginUrl);
+      // 构建登录URL，使用openEuler的OAuth参数格式
+      const fullLoginUrl = `${OAuthService.LOGIN_BASE_URL}?client_id=${OAuthService.CLIENT_ID}&redirect_uri=${encodeURIComponent(callbackUri)}&lang=zh`;
+
+      console.log('OAuthService: Opening login URL with client_id:', fullLoginUrl);
 
       // 在外部浏览器中打开登录页面
       await vscode.env.openExternal(vscode.Uri.parse(fullLoginUrl));
@@ -219,7 +222,7 @@ export class OAuthService implements vscode.UriHandler {
       // 首先显示详细的操作指导
       const proceed = await vscode.window.showInformationMessage(
         '手动获取Cookie步骤：\n\n' +
-        '1. 在浏览器中访问 https://id.openeuler.org/login\n' +
+        `1. 在浏览器中访问 ${OAuthService.LOGIN_BASE_URL}\n` +
         '2. 完成登录\n' +
         '3. 按F12打开开发者工具\n' +
         '4. 切换到"应用程序"(Application)标签\n' +
@@ -234,7 +237,7 @@ export class OAuthService implements vscode.UriHandler {
 
       if (proceed === '打开登录页面') {
         // 打开登录页面
-        await vscode.env.openExternal(vscode.Uri.parse('https://id.openeuler.org/login'));
+        await vscode.env.openExternal(vscode.Uri.parse(OAuthService.LOGIN_BASE_URL));
 
         // 再次询问是否准备输入
         const ready = await vscode.window.showInformationMessage(

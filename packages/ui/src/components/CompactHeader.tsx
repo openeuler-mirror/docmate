@@ -17,10 +17,6 @@ export function CompactHeader({
     <div className="compact-header">
       <div className="header-left">
         <h2 className="app-title">DocMate</h2>
-        <div className="header-divider">|</div>
-        <span className="conversation-status">
-          {hasConversations ? '对话进行中' : '等待开始'}
-        </span>
       </div>
       
       <div className="header-center">

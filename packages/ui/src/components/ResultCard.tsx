@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   DiffSegment,
   CheckResultItem,
@@ -24,7 +25,12 @@ interface ResultCardProps {
 
 // 这些辅助函数已移至UnifiedResultSection组件中
 
-export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
+export function ResultCard({ type, results }: ResultCardProps) {
+  // 检查是否已经被处理过
+  const isDismissed = results && typeof results === 'object' && !Array.isArray(results) && (results as any).dismissed;
+
+  // 控制DiffView的显示状态，如果已经被处理过则默认隐藏
+  const [showDiffView, setShowDiffView] = useState(!isDismissed);
 
   const getTypeTitle = (type: string) => {
     switch (type) {
@@ -65,6 +71,10 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
       targetLang?: string;
       message?: string;
       success?: boolean;
+      summary?: string;
+      explanation?: string;
+      suggestions?: string;
+      terminology?: any[];
     };
 
     const handleAccept = (suggestion: string) => {
@@ -72,16 +82,21 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
       console.log('ResultCard: Sending applySuggestion command to extension...');
 
       try {
+        // 需要传递原文信息以便精确替换
+        const originalText = diffResults.diffs ?
+          diffResults.diffs.filter(d => d.type !== 'insert').map(d => d.value).join('') : '';
+
         vscodeApi.postMessage({
           command: 'applySuggestion',
-          payload: { text: suggestion }
+          payload: {
+            text: suggestion,
+            originalText: originalText
+          }
         } as any);
         console.log('ResultCard: applySuggestion command sent successfully');
 
-        // 接受建议后，隐藏结果卡片
-        if (onDismiss) {
-          onDismiss();
-        }
+        // 接受建议后，只隐藏DiffView，保留说明部分
+        setShowDiffView(false);
       } catch (error) {
         console.error('ResultCard: Failed to send applySuggestion command:', error);
       }
@@ -89,9 +104,8 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
 
     const handleReject = () => {
       console.log('Suggestion rejected');
-      if (onDismiss) {
-        onDismiss();
-      }
+      // 拒绝建议后，也隐藏DiffView，保留说明部分
+      setShowDiffView(false);
     };
 
     // 检测是否有实际的diff修改
@@ -100,8 +114,8 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
 
     return (
       <div className="result-card">
-        {/* 只有当有实际修改时才显示DiffView */}
-        {hasDiffChanges && diffResults.diffs && (
+        {/* 只有当有实际修改且showDiffView为true时才显示DiffView */}
+        {hasDiffChanges && diffResults.diffs && showDiffView && (
           <DiffView
             diffs={diffResults.diffs}
             onAccept={handleAccept}
@@ -158,6 +172,67 @@ export function ResultCard({ type, results, onDismiss }: ResultCardProps) {
               }]
             }
             sectionType="polish"
+          />
+        ) : null}
+
+        {/* 改写结果 */}
+        {type === 'rewrite' && (diffResults.changes || diffResults.summary || diffResults.explanation) ? (
+          <UnifiedResultSection
+            title="✏️ 改写结果"
+            items={diffResults.changes && diffResults.changes.length > 0 ?
+              diffResults.changes.map((change: any, index: number) => ({
+                id: `rewrite-change-${index}`,
+                type: change.type || 'rewrite',
+                title: change.description || change.reason || '内容改写',
+                description: change.description || change.reason || '内容改写',
+                details: change.reason && change.description !== change.reason ? `原因：${change.reason}` : undefined
+              })) :
+              diffResults.summary ? [{
+                id: 'rewrite-summary',
+                type: 'rewrite',
+                title: diffResults.summary,
+                description: diffResults.summary,
+                details: diffResults.explanation ? `说明：${diffResults.explanation}` : undefined
+              }] : [{
+                id: 'rewrite-completed',
+                type: 'success',
+                title: '改写完成',
+                description: '文本已按要求进行改写',
+                details: diffResults.suggestions ? `建议：${diffResults.suggestions}` : undefined,
+                severity: 'info'
+              }]
+            }
+            sectionType="polish"
+          />
+        ) : null}
+
+        {/* 翻译结果 */}
+        {(type === 'translate' || type === 'fullTranslate') && (diffResults.sourceLang || diffResults.targetLang) ? (
+          <UnifiedResultSection
+            title="🌐 翻译结果"
+            items={
+              // 基本翻译信息
+              [{
+                id: 'translation-info',
+                type: 'translate',
+                title: `翻译为${diffResults.targetLang || '目标语言'}`,
+                description: `已将文本从${diffResults.sourceLang || '源语言'}翻译为${diffResults.targetLang || '目标语言'}`,
+                details: '翻译已完成，请查看上方的对比结果',
+                severity: 'info' as const
+              }].concat(
+                // 术语对照列表
+                diffResults.terminology && diffResults.terminology.length > 0 ?
+                  diffResults.terminology.map((term: any, index: number) => ({
+                    id: `terminology-${index}`,
+                    type: 'terminology',
+                    title: `${term.original} → ${term.translated}`,
+                    description: term.note || '术语翻译',
+                    details: term.note ? `说明：${term.note}` : '术语对照',
+                    severity: 'info' as const
+                  })) : []
+              )
+            }
+            sectionType="check"
           />
         ) : null}
 

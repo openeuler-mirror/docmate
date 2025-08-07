@@ -16,12 +16,15 @@ import {
 import { AuthService, AuthStatus } from '../services/AuthService';
 import { OAuthService } from '../services/OAuthService';
 import { BackendAIService } from '../services/BackendAIService';
+import { FrontendAIService } from '../services/FrontendAIService';
+import { userConfigService, UserAIConfig } from '../services/UserConfigService';
 
 export class ActionController {
   private terminologyService: TerminologyService;
   private authService: AuthService | null = null;
   private oauthService: OAuthService | null = null;
   private backendAIService: BackendAIService | null = null;
+  private frontendAIService: FrontendAIService | null = null;
 
   constructor() {
     // 初始化服务
@@ -38,7 +41,43 @@ export class ActionController {
     this.authService = AuthService.getInstance(secretStorage);
     this.oauthService = OAuthService.getInstance(this.authService);
     this.backendAIService = new BackendAIService(this.authService);
+
+    // 初始化前端AI服务
+    await this.initializeFrontendAIService();
+
     await this.authService.initialize();
+  }
+
+  /**
+   * 初始化前端AI服务
+   */
+  private async initializeFrontendAIService(): Promise<void> {
+    // 首先尝试从用户配置服务获取配置
+    const userConfig = await userConfigService.getAIConfig();
+
+    let aiConfig;
+    if (userConfig) {
+      // 使用用户配置
+      aiConfig = {
+        apiKey: userConfig.apiKey,
+        baseUrl: userConfig.baseUrl,
+        model: userConfig.model,
+        timeout: 30000,
+        maxRetries: 3
+      };
+    } else {
+      // 回退到VS Code设置
+      const vsCodeConfig = this.getAIConfig();
+      aiConfig = {
+        apiKey: vsCodeConfig.apiKey,
+        baseUrl: vsCodeConfig.endpoint,
+        model: vsCodeConfig.model || 'gpt-3.5-turbo',
+        timeout: vsCodeConfig.timeout || 30000,
+        maxRetries: vsCodeConfig.maxRetries || 3
+      };
+    }
+
+    this.frontendAIService = new FrontendAIService(aiConfig);
   }
 
   /**
@@ -81,6 +120,10 @@ export class ActionController {
         case 'settings':
           console.log('ActionController: Executing settings command');
           result = await this.handleSettings(payload);
+          break;
+        case 'config':
+          console.log('ActionController: Executing config command');
+          result = await this.handleConfig(payload);
           break;
         case 'auth':
           console.log('ActionController: Executing auth command');
@@ -149,18 +192,19 @@ export class ActionController {
       throw createError('INVALID_TEXT', 'Text is required for check operation');
     }
 
-    // 检查认证状态
-    const isAuthenticated = await this.ensureAuthenticated();
-    if (!isAuthenticated) {
-      throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    // 检查认证状态 - 暂时移除认证要求
+    // const isAuthenticated = await this.ensureAuthenticated();
+    // if (!isAuthenticated) {
+    //   throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    // }
+
+    // 使用前端AI服务
+    if (!this.frontendAIService) {
+      throw createError('FRONTEND_AI_SERVICE_NOT_INITIALIZED', 'Frontend AI service not initialized');
     }
 
-    if (!this.backendAIService) {
-      throw createError('BACKEND_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
-    }
-
-    // 使用后端AI服务，传递文本来源信息
-    const result = await this.backendAIService.check(text, { ...options, textSource });
+    // 使用前端AI服务，传递文本来源信息
+    const result = await this.frontendAIService.check(text, { ...options, textSource });
     return {
       ...result,
       textSource
@@ -187,18 +231,19 @@ export class ActionController {
       throw createError('INVALID_TEXT', 'Text is required for polish operation');
     }
 
-    // 检查认证状态
-    const isAuthenticated = await this.ensureAuthenticated();
-    if (!isAuthenticated) {
-      throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    // 检查认证状态 - 暂时移除认证要求
+    // const isAuthenticated = await this.ensureAuthenticated();
+    // if (!isAuthenticated) {
+    //   throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    // }
+
+    // 使用前端AI服务
+    if (!this.frontendAIService) {
+      throw createError('FRONTEND_AI_SERVICE_NOT_INITIALIZED', 'Frontend AI service not initialized');
     }
 
-    if (!this.backendAIService) {
-      throw createError('BACKEND_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
-    }
-
-    // 使用后端AI服务，传递文本来源信息
-    const result = await this.backendAIService.polish(text, { ...options, textSource });
+    // 使用前端AI服务，传递文本来源信息
+    const result = await this.frontendAIService.polish(text, { ...options, textSource });
     return {
       ...result,
       textSource
@@ -245,29 +290,41 @@ export class ActionController {
       throw createError('MISSING_TARGET_LANGUAGE', 'Target language is required for translation');
     }
 
-    // 检查认证状态
-    const isAuthenticated = await this.ensureAuthenticated();
-    if (!isAuthenticated) {
-      throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
-    }
+    // 检查认证状态 - 暂时移除认证要求
+    // const isAuthenticated = await this.ensureAuthenticated();
+    // if (!isAuthenticated) {
+    //   throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    // }
 
-    // 使用BackendAIService
-    if (!this.backendAIService) {
-      throw createError('BACKEND_AI_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
+    // 使用前端AI服务
+    if (!this.frontendAIService) {
+      throw createError('FRONTEND_AI_SERVICE_NOT_INITIALIZED', 'Frontend AI service not initialized');
     }
 
     // 根据文本来源决定处理方式
     if (isFullDocument) {
       // 全文翻译，返回FullTranslateResult
-      const result = await this.backendAIService.translate(finalText, options);
+      const result = await this.frontendAIService.translate(finalText, options);
+      // 从diffs中提取翻译后的文本
+      let translatedText = finalText;
+      if (result.diffs.length > 0) {
+        // 查找insert类型的diff，这包含翻译后的文本
+        const insertDiff = result.diffs.find(diff => diff.type === 'insert');
+        if (insertDiff) {
+          translatedText = insertDiff.value;
+        }
+      }
+
       return {
-        ...result,
+        translatedText: translatedText,
+        sourceLang: result.sourceLang,
+        targetLang: result.targetLang,
         isFullDocument: true,
         textSource: textSource || 'full'
       } as FullTranslateResult;
     } else {
       // 选中文本翻译，返回TranslateResult
-      return await this.backendAIService.translate(finalText, options);
+      return await this.frontendAIService.translate(finalText, options);
     }
   }
 
@@ -292,22 +349,22 @@ export class ActionController {
       textSource = 'full';
     }
 
-    // 检查认证状态
-    const isAuthenticated = await this.ensureAuthenticated();
-    if (!isAuthenticated) {
-      throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    // 检查认证状态 - 暂时移除认证要求
+    // const isAuthenticated = await this.ensureAuthenticated();
+    // if (!isAuthenticated) {
+    //   throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
+    // }
+
+    // 使用前端AI服务
+    if (!this.frontendAIService) {
+      throw createError('FRONTEND_AI_SERVICE_NOT_INITIALIZED', 'Frontend AI service not initialized');
     }
 
-    // 使用BackendAIService
-    if (!this.backendAIService) {
-      throw createError('BACKEND_AI_SERVICE_NOT_INITIALIZED', 'Backend AI service not initialized');
-    }
+    // 从payload中提取用户的改写指令
+    const instruction = payload.text || payload.instruction || '请改写这段文本，使其更加清晰和简洁';
+    const textToRewrite = originalText || text;
 
-    const result = await this.backendAIService.rewrite(text, {
-      conversationHistory,
-      originalText,
-      textSource
-    });
+    const result = await this.frontendAIService.rewrite(textToRewrite, instruction, conversationHistory);
 
     return {
       ...result,
@@ -319,8 +376,9 @@ export class ActionController {
    * 处理应用建议命令
    */
   private async handleApplySuggestion(payload: any): Promise<{ status: string }> {
-    const { text } = payload;
+    const { text, originalText } = payload;
     console.log('ActionController: handleApplySuggestion called with text:', text);
+    console.log('ActionController: originalText:', originalText);
 
     if (!text || typeof text !== 'string') {
       throw createError('INVALID_TEXT', 'Text is required for apply suggestion operation');
@@ -335,18 +393,31 @@ export class ActionController {
 
     console.log('ActionController: Editor found, selection:', editor.selection);
     console.log('ActionController: Selection isEmpty:', editor.selection.isEmpty);
-    console.log('ActionController: Current document text length:', editor.document.getText().length);
 
     // 应用建议到编辑器
     const success = await editor.edit(editBuilder => {
       if (editor.selection.isEmpty) {
-        // 如果没有选择，替换整个文档
-        const fullRange = new vscode.Range(
-          editor.document.positionAt(0),
-          editor.document.positionAt(editor.document.getText().length)
-        );
-        console.log('ActionController: Replacing entire document, range:', fullRange);
-        editBuilder.replace(fullRange, text);
+        // 如果没有选择文本，尝试在文档中查找原文并替换
+        if (originalText) {
+          const documentText = editor.document.getText();
+          const originalIndex = documentText.indexOf(originalText);
+
+          if (originalIndex !== -1) {
+            // 找到原文，只替换这部分
+            const startPos = editor.document.positionAt(originalIndex);
+            const endPos = editor.document.positionAt(originalIndex + originalText.length);
+            const range = new vscode.Range(startPos, endPos);
+            console.log('ActionController: Replacing found original text, range:', range);
+            editBuilder.replace(range, text);
+          } else {
+            // 找不到原文，提示用户选择文本
+            console.warn('ActionController: Original text not found in document');
+            throw createError('ORIGINAL_TEXT_NOT_FOUND', '无法找到原文，请选择要修改的文本');
+          }
+        } else {
+          // 没有原文信息，提示用户选择文本
+          throw createError('NO_SELECTION_NO_ORIGINAL', '请选择要修改的文本，或确保提供了原文信息');
+        }
       } else {
         // 替换选中的文本
         console.log('ActionController: Replacing selected text, selection:', editor.selection);
@@ -374,6 +445,100 @@ export class ActionController {
     this.terminologyService = new TerminologyService();
 
     return { status: 'refreshed' };
+  }
+
+  /**
+   * 处理配置命令
+   */
+  private async handleConfig(payload: any): Promise<any> {
+    const { action, config } = payload;
+
+    switch (action) {
+      case 'status':
+        // 检查配置状态
+        console.log('ActionController: Checking config status');
+        const status = await userConfigService.getConfigStatus();
+        const result = {
+          action: 'status',
+          isConfigured: status.isConfigured,
+          hasBaseUrl: status.hasBaseUrl,
+          hasApiKey: status.hasApiKey,
+          hasModel: status.hasModel
+        };
+        console.log('ActionController: Config status result:', result);
+        return result;
+
+      case 'get':
+        // 获取当前配置
+        const currentConfig = await userConfigService.getAIConfig();
+        return {
+          action: 'get',
+          config: currentConfig
+        };
+
+      case 'save':
+        // 保存配置
+        try {
+          await userConfigService.saveAIConfig(config);
+
+          // 重新初始化前端AI服务
+          await this.initializeFrontendAIService();
+
+          return {
+            action: 'saved',
+            success: true
+          };
+        } catch (error) {
+          return {
+            action: 'saved',
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+        }
+
+      case 'test':
+        // 测试连接
+        try {
+          // 创建临时的AI服务实例来测试连接
+          const testService = new FrontendAIService({
+            apiKey: config.apiKey,
+            baseUrl: config.baseUrl,
+            model: config.model,
+            timeout: 10000,
+            maxRetries: 1
+          });
+
+          // 发送一个简单的测试请求
+          await testService.callAIService('Hello, this is a test message.');
+
+          return {
+            action: 'test',
+            success: true,
+            message: '连接测试成功！'
+          };
+        } catch (error) {
+          return {
+            action: 'test',
+            success: false,
+            error: error instanceof Error ? error.message : 'Connection test failed'
+          };
+        }
+
+      case 'clear':
+        // 清除配置
+        await userConfigService.clearConfig();
+
+        // 重新初始化前端AI服务
+        await this.initializeFrontendAIService();
+
+        return {
+          action: 'cleared',
+          success: true
+        };
+
+      default:
+        throw createError('INVALID_CONFIG_ACTION', `Unknown config action: ${action}`);
+    }
   }
 
   /**
@@ -440,6 +605,19 @@ export class ActionController {
         } else {
           vscode.window.showInformationMessage('当前未登录DocMate');
         }
+        return { status: 'shown' };
+
+      case 'showNotImplemented':
+        vscode.window.showInformationMessage(
+          '登录功能暂未实现，请在配置中填写您的AI服务信息',
+          '立即登录'
+        ).then(selection => {
+          if (selection === '立即登录') {
+            vscode.window.showInformationMessage(
+              '您可以在插件配置中设置OpenAI兼容的API服务，包括基础URL、API密钥和模型名称。'
+            );
+          }
+        });
         return { status: 'shown' };
 
       case 'loginWithToken':
@@ -605,6 +783,17 @@ export class ActionController {
 
     // 设置后端基础URL
     configService.setBackendBaseUrl(backendBaseUrl);
+
+    // 更新前端AI服务配置
+    if (this.frontendAIService) {
+      this.frontendAIService.updateConfig({
+        apiKey: newConfig.apiKey,
+        baseUrl: newConfig.endpoint,
+        model: newConfig.model || 'gpt-3.5-turbo',
+        timeout: newConfig.timeout,
+        maxRetries: newConfig.maxRetries
+      });
+    }
   }
 
   /**

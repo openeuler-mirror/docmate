@@ -140,6 +140,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             result: result
           } as HostResult);
           break;
+        case 'config':
+          // 配置命令响应
+          this.sendToWebview({
+            command: 'config',
+            result: result
+          } as HostResult);
+          break;
         default:
           // 兼容旧格式
           this.sendToWebview({

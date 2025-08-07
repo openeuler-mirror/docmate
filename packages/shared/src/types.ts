@@ -9,7 +9,7 @@ export type TextSource = 'selected' | 'full';
 
 // UI发往Host的命令接口
 export interface UICommand extends BaseCommand {
-  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings' | 'auth';
+  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings' | 'auth' | 'config';
   payload: {
     text?: string;
     textSource?: TextSource;
@@ -19,12 +19,13 @@ export interface UICommand extends BaseCommand {
     conversationHistory?: ChatMessage[];
     suggestion?: string;
     originalText?: string;
+    config?: any; // 配置相关数据
   };
 }
 
 // Host发往UI的结果接口
 export interface HostResult extends BaseCommand {
-  command: 'renderResult' | 'error' | 'loading' | 'ready' | 'auth' | 'renderCheckResult' | 'renderPolishResult' | 'renderTranslateResult' | 'renderRewriteResult';
+  command: 'renderResult' | 'error' | 'loading' | 'ready' | 'auth' | 'renderCheckResult' | 'renderPolishResult' | 'renderTranslateResult' | 'renderRewriteResult' | 'config';
   payload?: {
     type?: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
     data?: any;

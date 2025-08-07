@@ -8,6 +8,7 @@ interface DiffViewProps {
   title?: string;
   showStats?: boolean;
   className?: string;
+  showActions?: boolean;
 }
 
 interface DiffStats {
@@ -23,7 +24,8 @@ const DiffView: React.FC<DiffViewProps> = ({
   onReject,
   title = "修改建议",
   showStats = true,
-  className = ""
+  className = "",
+  showActions = true
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -102,50 +104,74 @@ const DiffView: React.FC<DiffViewProps> = ({
       {isExpanded && (
         <>
           <div className="diff-content">
-            <div className="diff-text">
-              {diffs.map((segment, index) => (
-                <span 
-                  key={index} 
-                  className={`diff-segment diff-${segment.type}`}
-                  title={
-                    segment.type === 'insert' ? '新增内容' :
-                    segment.type === 'delete' ? '删除内容' : 
-                    '未修改内容'
-                  }
-                >
-                  {segment.value}
-                </span>
-              ))}
+            {/* 原文显示 */}
+            <div className="diff-section original-section">
+              <div className="diff-section-header">
+                <span className="diff-section-title">📝 原文</span>
+              </div>
+              <div className="diff-text original-text">
+                {diffs.filter(d => d.type !== 'insert').map((segment, index) => (
+                  <span
+                    key={`orig-${index}`}
+                    className={`diff-segment ${segment.type === 'delete' ? 'deleted' : 'unchanged'}`}
+                  >
+                    {segment.value}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* 修改后显示 */}
+            <div className="diff-section modified-section">
+              <div className="diff-section-header">
+                <span className="diff-section-title">✨ 修改后</span>
+              </div>
+              <div className="diff-text modified-text">
+                {diffs.filter(d => d.type !== 'delete').map((segment, index) => (
+                  <span
+                    key={`mod-${index}`}
+                    className={`diff-segment ${segment.type === 'insert' ? 'inserted' : 'unchanged'}`}
+                  >
+                    {segment.value}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="diff-actions">
-            <button
-              className={`btn btn-accept ${isProcessing ? 'processing' : ''}`}
-              onClick={() => {
-                if (!isProcessing) {
-                  setIsProcessing(true);
-                  onAccept(suggestionText);
-                }
-              }}
-              disabled={isProcessing}
-              title="接受此修改建议"
-            >
-              {isProcessing ? '⏳ 应用中...' : '✓ 接受'}
-            </button>
-            <button
-              className="btn btn-reject"
-              onClick={() => {
-                if (!isProcessing) {
-                  onReject();
-                }
-              }}
-              disabled={isProcessing}
-              title="拒绝此修改建议"
-            >
-              ✗ 拒绝
-            </button>
-          </div>
+          {showActions && (
+            <div className="diff-actions">
+              <button
+                className={`btn btn-accept ${isProcessing ? 'processing' : ''}`}
+                onClick={() => {
+                  if (!isProcessing) {
+                    setIsProcessing(true);
+                    onAccept(suggestionText);
+                    // 延迟重置状态，给用户反馈时间
+                    setTimeout(() => {
+                      setIsProcessing(false);
+                    }, 1000);
+                  }
+                }}
+                disabled={isProcessing}
+                title="接受此修改建议"
+              >
+                {isProcessing ? '⏳ 已应用' : '✓ 接受'}
+              </button>
+              <button
+                className="btn btn-reject"
+                onClick={() => {
+                  if (!isProcessing) {
+                    onReject();
+                  }
+                }}
+                disabled={isProcessing}
+                title="拒绝此修改建议"
+              >
+                ✗ 拒绝
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -11,6 +11,7 @@ import { InputPanel } from './components/InputPanel';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorMessage } from './components/ErrorMessage';
 import { CompactHeader } from './components/CompactHeader';
+import { ConfigProvider } from './components/ConfigProvider';
 import './App.css';
 
 interface AppState {
@@ -19,6 +20,8 @@ interface AppState {
   selectedText: string;
   settings: any;
   isAuthenticated: boolean;
+  isConfigured: boolean;
+  isCheckingConfig: boolean;
 }
 
 export default function App() {
@@ -29,7 +32,9 @@ export default function App() {
     },
     selectedText: '',
     settings: null,
-    isAuthenticated: false,
+    isAuthenticated: true, // 默认允许使用AI功能，不需要登录
+    isConfigured: false, // 默认未配置，需要检查
+    isCheckingConfig: true, // 正在检查配置状态
   });
 
   // 添加错误边界
@@ -48,8 +53,15 @@ export default function App() {
       // 监听来自扩展的消息
       const unsubscribe = vscodeApi.onMessage(handleMessage);
 
-      // 加载初始设置
-      vscodeApi.settings('get');
+      // 加载初始设置 - 暂时注释掉，使用新的配置系统
+      // vscodeApi.settings('get');
+
+      // 检查配置状态
+      console.log('App: Sending config status request');
+      vscodeApi.postMessage({
+        command: 'config',
+        payload: { action: 'status' }
+      });
 
       // 恢复状态
       const savedState = vscodeApi.getState();
@@ -97,7 +109,43 @@ export default function App() {
       case 'ready':
         handleReady();
         break;
+      case 'config':
+        handleConfigMessage(message as HostResult);
+        break;
     }
+  };
+
+  /**
+   * 处理配置消息
+   */
+  const handleConfigMessage = (message: HostResult) => {
+    console.log('App: Received config message:', message);
+    const result = message.result;
+
+    if (result && result.action === 'status') {
+      console.log('App: Processing config status:', result);
+      setState(prev => ({
+        ...prev,
+        isConfigured: result.isConfigured || false,
+        isCheckingConfig: false
+      }));
+    } else if (result && result.action === 'saved') {
+      console.log('App: Processing config saved:', result);
+      setState(prev => ({
+        ...prev,
+        isConfigured: true
+      }));
+    }
+  };
+
+  /**
+   * 处理配置保存完成
+   */
+  const handleConfigSaved = () => {
+    setState(prev => ({
+      ...prev,
+      isConfigured: true
+    }));
   };
 
   /**
@@ -106,10 +154,10 @@ export default function App() {
   const handleRenderResult = (message: HostResult) => {
     const data = message.payload?.data;
 
-    if (data && typeof data === 'object' && 'type' in data && data.type === 'selectedText') {
+    if (data && typeof data === 'object' && 'type' in data && (data as any).type === 'selectedText') {
       setState(prev => ({
         ...prev,
-        selectedText: data.text,
+        selectedText: (data as any).text,
       }));
       return;
     }
@@ -123,7 +171,7 @@ export default function App() {
 
         if (lastConversation && lastConversation.type === 'user') {
           // 将结果附加到最后一个用户消息
-          lastConversation.results = data;
+          lastConversation.results = data as any;
         }
 
         return {
@@ -315,17 +363,30 @@ export default function App() {
   };
 
   /**
-   * 清除特定对话的结果
+   * 标记特定对话的结果为已处理（不删除，只是标记状态）
    */
   const dismissResult = (conversationId: string) => {
-    setState(prev => ({
-      ...prev,
-      conversations: prev.conversations.map(conv =>
-        conv.id === conversationId
-          ? { ...conv, results: undefined }
-          : conv
-      ),
-    }));
+    setState(prev => {
+      const newState = {
+        ...prev,
+        conversations: prev.conversations.map(conv =>
+          conv.id === conversationId && conv.results
+            ? {
+                ...conv,
+                results: {
+                  ...conv.results,
+                  dismissed: true,
+                  processedAt: new Date().toISOString()
+                }
+              }
+            : conv
+        ),
+      };
+
+      // 保存状态到VS Code
+      vscodeApi.setState(newState);
+      return newState;
+    });
   };
 
   /**
@@ -378,22 +439,32 @@ export default function App() {
       )}
 
       <div className="app-content">
-        <ChatWindow
-          conversations={state.conversations}
-          onClear={clearConversations}
-          onDismissResult={dismissResult}
-        />
+        {state.isCheckingConfig ? (
+          <div className="config-checking">
+            <LoadingSpinner message="正在检查配置..." />
+          </div>
+        ) : !state.isConfigured ? (
+          <ConfigProvider onConfigSaved={handleConfigSaved} />
+        ) : (
+          <>
+            <ChatWindow
+              conversations={state.conversations}
+              onClear={clearConversations}
+              onDismissResult={dismissResult}
+            />
 
-        {state.operationState.isLoading && (
-          <LoadingSpinner message={`正在${getOperationName(state.operationState.lastOperation)}...`} />
+            {state.operationState.isLoading && (
+              <LoadingSpinner message={`正在${getOperationName(state.operationState.lastOperation)}...`} />
+            )}
+
+            <InputPanel
+              selectedText={state.selectedText}
+              onExecute={executeOperation}
+              disabled={state.operationState.isLoading}
+              authRequired={false}
+            />
+          </>
         )}
-
-        <InputPanel
-          selectedText={state.selectedText}
-          onExecute={executeOperation}
-          disabled={state.operationState.isLoading || !state.isAuthenticated}
-          authRequired={!state.isAuthenticated}
-        />
       </div>
     </div>
   );

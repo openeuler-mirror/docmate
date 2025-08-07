@@ -23,7 +23,7 @@ export function createError(code: string, message: string, details?: any): DocMa
  * 类型守卫：检查是否为UI命令
  */
 export function isUICommand(message: MessageType): message is UICommand {
-  return ['check', 'polish', 'translate', 'rewrite', 'applySuggestion', 'refresh', 'settings', 'auth'].includes(message.command);
+  return ['check', 'polish', 'translate', 'rewrite', 'applySuggestion', 'refresh', 'settings', 'auth', 'config'].includes(message.command);
 }
 
 /**
