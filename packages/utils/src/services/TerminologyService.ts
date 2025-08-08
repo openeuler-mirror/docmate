@@ -3,6 +3,7 @@ import { TerminologyDatabase, TerminologyEntry, createError } from '@docmate/sha
 export class TerminologyService {
   private database: TerminologyDatabase | null = null;
   private indexMap: Map<string, TerminologyEntry> = new Map();
+  private replacementRegex: RegExp | null = null;
 
   constructor() {
     this.loadDefaultTerminology();
@@ -72,17 +73,30 @@ export class TerminologyService {
     if (!this.database) return;
 
     this.indexMap.clear();
-    
+    const allTermsAndAliases = new Set<string>();
+
     for (const entry of this.database.entries) {
       // 主术语
       this.indexMap.set(entry.term.toLowerCase(), entry);
-      
+      allTermsAndAliases.add(entry.term);
+
       // 别名
       if (entry.aliases) {
         for (const alias of entry.aliases) {
           this.indexMap.set(alias.toLowerCase(), entry);
+          allTermsAndAliases.add(alias);
         }
       }
+    }
+
+    // 按长度降序排序以优先匹配长术语
+    const sortedTerms = Array.from(allTermsAndAliases).sort((a, b) => b.length - a.length);
+
+    if (sortedTerms.length > 0) {
+      const regexParts = sortedTerms.map(term => this.escapeRegex(term));
+      this.replacementRegex = new RegExp(`\\b(${regexParts.join('|')})\\b`, 'gi');
+    } else {
+      this.replacementRegex = null;
     }
   }
 
@@ -236,6 +250,23 @@ export class TerminologyService {
         const prev = array[index - 1];
         return result.position >= prev.position + prev.length;
       });
+  }
+
+  /**
+   * 替换文本中的术语
+   * @param text 输入文本
+   * @returns 替换后的文本
+   */
+  public replace(text: string): string {
+    if (!this.replacementRegex || !this.database) {
+      return text;
+    }
+
+    return text.replace(this.replacementRegex, (matched) => {
+      const entry = this.indexMap.get(matched.toLowerCase());
+      // 如果找到了对应的术语条目，则返回该条目的标准术语，否则返回原文
+      return entry ? entry.term : matched;
+    });
   }
 
   /**

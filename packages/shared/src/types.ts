@@ -30,8 +30,11 @@ export interface HostResult extends BaseCommand {
     type?: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
     data?: any;
     error?: string;
+    code?: string;
+    suggestion?: string;
+    details?: any;
     loading?: boolean;
-    diffs?: DiffSegment[];
+    diffs?: Diff[];
     issues?: any[];
     changes?: any[];
     sourceLang?: string;
@@ -45,50 +48,13 @@ export interface HostResult extends BaseCommand {
   result?: any;
 }
 
-// 检查结果项
-export interface CheckResultItem {
-  id: string;
-  type: 'terminology' | 'grammar' | 'style' | 'consistency';
-  severity: 'error' | 'warning' | 'info';
+// 检查发现的问题
+export interface Issue {
   message: string;
   suggestion?: string;
-  range: {
-    start: number;
-    end: number;
-  };
-  originalText: string;
-  suggestedText?: string;
-  confidence?: number;
-  source?: string; // 来源：术语库、语法规则等
-}
-
-// 润色结果项
-export interface PolishResultItem {
-  id: string;
-  type: 'clarity' | 'conciseness' | 'tone' | 'structure';
-  originalText: string;
-  polishedText: string;
-  explanation: string;
-  confidence: number;
-  range: {
-    start: number;
-    end: number;
-  };
-}
-
-// 翻译结果项
-export interface TranslateResultItem {
-  id: string;
-  originalText: string;
-  translatedText: string;
-  sourceLanguage: string;
-  targetLanguage: string;
-  confidence: number;
-  alternatives?: string[];
-  range: {
-    start: number;
-    end: number;
-  };
+  range: [number, number];
+  severity: 'error' | 'warning' | 'info';
+  type: 'terminology' | 'grammar' | 'style' | 'consistency';
 }
 
 // AI服务配置
@@ -158,15 +124,7 @@ export interface ConversationItem {
   content: string;
   timestamp: number;
   operation?: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
-  results?: CheckResultItem[] | PolishResultItem[] | TranslateResultItem[] | {
-    diffs?: DiffSegment[];
-    issues?: any[];
-    changes?: any[];
-    sourceLang?: string;
-    targetLang?: string;
-    message?: string;
-    success?: boolean;
-  };
+  results?: AIResult;
 }
 
 
@@ -177,6 +135,59 @@ export interface DocMateError {
   details?: any;
   timestamp: number;
 }
+
+// 错误码枚举
+export enum ErrorCode {
+  // 网络相关
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  AI_SERVICE_ERROR = 'AI_SERVICE_ERROR',
+  CONNECTION_TIMEOUT = 'CONNECTION_TIMEOUT',
+
+  // 认证相关
+  AUTH_REQUIRED = 'AUTH_REQUIRED',
+  AUTH_FAILED = 'AUTH_FAILED',
+  INVALID_API_KEY = 'INVALID_API_KEY',
+
+  // 配置相关
+  CONFIG_MISSING = 'CONFIG_MISSING',
+  CONFIG_INVALID = 'CONFIG_INVALID',
+
+  // 文本处理相关
+  INVALID_TEXT = 'INVALID_TEXT',
+  NO_ACTIVE_EDITOR = 'NO_ACTIVE_EDITOR',
+  ORIGINAL_TEXT_NOT_FOUND = 'ORIGINAL_TEXT_NOT_FOUND',
+  TEXT_TOO_LONG = 'TEXT_TOO_LONG',
+
+  // 解析相关
+  JSON_PARSE_ERROR = 'JSON_PARSE_ERROR',
+  RESPONSE_FORMAT_ERROR = 'RESPONSE_FORMAT_ERROR',
+
+  // 系统相关
+  UNKNOWN_COMMAND = 'UNKNOWN_COMMAND',
+  SERVICE_NOT_INITIALIZED = 'SERVICE_NOT_INITIALIZED',
+  UNKNOWN_ERROR = 'UNKNOWN_ERROR'
+}
+
+// 友好错误消息映射
+export const ERROR_MESSAGES: Record<ErrorCode, string> = {
+  [ErrorCode.NETWORK_ERROR]: '网络连接失败，请检查网络设置',
+  [ErrorCode.AI_SERVICE_ERROR]: 'AI服务暂时不可用，请稍后重试',
+  [ErrorCode.CONNECTION_TIMEOUT]: '连接超时，请检查网络或稍后重试',
+  [ErrorCode.AUTH_REQUIRED]: '需要登录才能使用此功能',
+  [ErrorCode.AUTH_FAILED]: '登录失败，请检查凭据',
+  [ErrorCode.INVALID_API_KEY]: 'API密钥无效，请在设置中更新',
+  [ErrorCode.CONFIG_MISSING]: '请先在设置中配置AI服务',
+  [ErrorCode.CONFIG_INVALID]: '配置信息有误，请检查设置',
+  [ErrorCode.INVALID_TEXT]: '请选择有效的文本内容',
+  [ErrorCode.NO_ACTIVE_EDITOR]: '请先打开一个文档',
+  [ErrorCode.ORIGINAL_TEXT_NOT_FOUND]: '无法找到原文，请重新选择文本',
+  [ErrorCode.TEXT_TOO_LONG]: '文本过长，请分段处理',
+  [ErrorCode.JSON_PARSE_ERROR]: 'AI响应格式错误，请重试',
+  [ErrorCode.RESPONSE_FORMAT_ERROR]: 'AI响应格式不正确',
+  [ErrorCode.UNKNOWN_COMMAND]: '未知命令',
+  [ErrorCode.SERVICE_NOT_INITIALIZED]: '服务未初始化',
+  [ErrorCode.UNKNOWN_ERROR]: '发生未知错误，请重试'
+};
 
 // 常量
 export const COMMANDS = {
@@ -213,7 +224,7 @@ export const LANGUAGES = {
  * 'insert': 表示该部分文本是新增的。
  * 'delete': 表示该部分文本已被删除。
  */
-export interface DiffSegment {
+export interface Diff {
   type: 'equal' | 'insert' | 'delete';
   value: string;
 }
@@ -241,57 +252,23 @@ export enum ActionType {
 }
 
 /**
- * Check Action 的具体结果。
- * 继承了基础的 DiffSegment，但专注于拼写、语法等问题。
+ * AI 操作的统一结果模型
  */
-export interface CheckResult {
-  diffs: DiffSegment[];
-  issues: {
-    message: string;
-    suggestion: string;
-    range: [number, number];
-  }[];
-  textSource?: TextSource;
-}
-
-/**
- * Polish Action 的具体结果。
- */
-export interface PolishResult {
-  diffs: DiffSegment[];
-  textSource?: TextSource;
-}
-
-/**
- * Translate Action 的具体结果。
- */
-export interface TranslateResult {
-  diffs: DiffSegment[];
-  sourceLang: string;
-  targetLang: string;
-  textSource?: TextSource;
-}
-
-/**
- * 全文翻译结果（新版本）
- */
-export interface FullTranslateResult {
-  translatedText: string;
-  sourceLang: string;
-  targetLang: string;
-  originalFileName?: string;
-  suggestedFileName?: string;
-  isFullDocument?: boolean;
-  textSource?: TextSource;
-}
-
-/**
- * Rewrite Action 的具体结果，包含完整的对话历史。
- */
-export interface RewriteResult {
-  diffs: DiffSegment[];
-  conversationId: string; // 用于跟踪连续对话
-  textSource?: TextSource;
+export interface AIResult {
+  type: 'check' | 'polish' | 'rewrite' | 'translate';
+  originalText: string;
+  modifiedText: string;
+  diffs: Diff[];
+  issues?: Issue[];
+  changes?: any[];
+  summary?: string;
+  explanation?: string;
+  sourceLang?: string;
+  targetLang?: string;
+  // 可选：用于翻译结果的术语对照
+  terminology?: { original: string; translated: string; note?: string }[];
+  // 是否已处理（接受/拒绝）用于持久化隐藏 Diff
+  dismissed?: boolean;
 }
 
 /**

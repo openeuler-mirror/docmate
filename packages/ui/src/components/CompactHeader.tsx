@@ -5,13 +5,15 @@ interface CompactHeaderProps {
   onRefresh: () => void;
   hasConversations: boolean;
   onAuthChange: (isAuthenticated: boolean) => void;
+  onNavigateToConfig: () => void;
 }
 
-export function CompactHeader({ 
-  onClear, 
-  onRefresh, 
-  hasConversations, 
-  onAuthChange 
+export function CompactHeader({
+  onClear,
+  onRefresh,
+  hasConversations,
+  onAuthChange,
+  onNavigateToConfig,
 }: CompactHeaderProps) {
   return (
     <div className="compact-header">
@@ -39,6 +41,13 @@ export function CompactHeader({
           title="刷新"
         >
           🔄
+        </button>
+        <button
+          className="header-action-button config-button"
+          onClick={onNavigateToConfig}
+          title="设置"
+        >
+          ⚙️
         </button>
       </div>
     </div>

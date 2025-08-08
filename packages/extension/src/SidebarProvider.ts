@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ActionController } from './controllers/ActionController';
-import { UICommand, HostResult, isUICommand } from '@docmate/shared';
+import { ErrorHandlingService } from './services/ErrorHandlingService';
+import { UICommand, HostResult, isUICommand, DocMateError } from '@docmate/shared';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'docmate.sidebar';
@@ -19,7 +20,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    */
   public async setContext(context: vscode.ExtensionContext): Promise<void> {
     this._context = context;
-    await this._actionController.initializeAuth(context.secrets);
+    await this._actionController.initializeAuth(context.secrets, context);
   }
 
   public resolveWebviewView(
@@ -81,33 +82,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       switch (command.command) {
         case 'check':
           this.sendToWebview({
-            command: 'renderCheckResult',
-            payload: {
-              type: 'check',
-              diffs: result.diffs,
-              issues: result.issues
-            }
+            command: 'renderResult',
+            result: result
           } as HostResult);
           break;
         case 'polish':
           this.sendToWebview({
-            command: 'renderPolishResult',
-            payload: {
-              type: 'polish',
-              diffs: result.diffs,
-              changes: result.changes
-            }
+            command: 'renderResult',
+            result: result
           } as HostResult);
           break;
         case 'translate':
           this.sendToWebview({
-            command: 'renderTranslateResult',
-            payload: {
-              type: 'translate',
-              diffs: result.diffs,
-              sourceLang: result.sourceLang,
-              targetLang: result.targetLang
-            }
+            command: 'renderResult',
+            result: result
           } as HostResult);
           break;
         case 'fullTranslate':
@@ -117,13 +105,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           break;
         case 'rewrite':
           this.sendToWebview({
-            command: 'renderRewriteResult',
-            payload: {
-              type: 'rewrite',
-              diffs: result.diffs,
-              conversationId: result.conversationId,
-              conversation: command.payload.conversationHistory || []
-            }
+            command: 'renderResult',
+            result: result
           } as HostResult);
           break;
         case 'applySuggestion':
@@ -232,11 +215,30 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   /**
    * 发送错误消息到webview
    */
-  private sendErrorToWebview(error: string): void {
+  private sendErrorToWebview(error: string | Error | DocMateError): void {
+    let errorData: DocMateError;
+
+    if (typeof error === 'string') {
+      errorData = ErrorHandlingService.createError('UNKNOWN_ERROR' as any, error);
+    } else if (error instanceof Error) {
+      errorData = ErrorHandlingService.fromError(error);
+    } else {
+      errorData = error as DocMateError;
+    }
+
+    // 发送结构化错误信息
     this.sendToWebview({
       command: 'error',
-      payload: { error }
+      payload: {
+        error: ErrorHandlingService.getFriendlyMessage(errorData),
+        code: errorData.code,
+        details: errorData.details,
+        suggestion: ErrorHandlingService.getSuggestedAction(errorData)
+      }
     });
+
+    // 记录详细错误日志
+    console.error('SidebarProvider Error:', ErrorHandlingService.formatForLogging(errorData));
   }
 
   /**

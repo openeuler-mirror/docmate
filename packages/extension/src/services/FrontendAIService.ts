@@ -1,11 +1,9 @@
 import {
-  CheckResult,
-  PolishResult,
-  TranslateResult,
-  RewriteResult,
+  AIResult,
   ChatMessage,
   createError,
-  AIServiceConfig
+  Diff,
+  Issue
 } from '@docmate/shared';
 import {
   buildCheckPrompt,
@@ -13,6 +11,7 @@ import {
   buildTranslatePrompt,
   buildRewritePrompt
 } from '../prompts';
+import { TerminologyService } from '@docmate/utils';
 
 /**
  * 前端AI服务配置接口
@@ -31,6 +30,7 @@ export interface FrontendAIConfig {
  */
 export class FrontendAIService {
   private config: FrontendAIConfig;
+  private terminologyService: TerminologyService;
 
   constructor(config: FrontendAIConfig) {
     this.config = {
@@ -38,6 +38,7 @@ export class FrontendAIService {
       maxRetries: 3,
       ...config
     };
+    this.terminologyService = new TerminologyService();
   }
 
   /**
@@ -50,7 +51,7 @@ export class FrontendAIService {
   /**
    * 检查文本
    */
-  async check(text: string, options: any = {}): Promise<CheckResult> {
+  async check(text: string, options: any = {}): Promise<AIResult> {
     const {
       enableGrammar = true,
       enableStyle = true,
@@ -69,8 +70,9 @@ export class FrontendAIService {
     const prompt = buildCheckPrompt(text, checkTypes, strictMode);
 
     try {
-      const aiResponse = await this.callAIService(prompt);
-      return this.parseCheckResponse(aiResponse, text);
+      const aiResponse = await this.callAIService(prompt, [], this.getCheckToolOptions());
+      // 如果返回为 {tool,args}，直接传递即可；parse 支持对象
+      return this.parseAIResponse(aiResponse, 'check', text);
     } catch (error) {
       console.error('FrontendAIService: Check failed:', error);
       throw createError('AI_SERVICE_ERROR', `Text check failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -80,7 +82,7 @@ export class FrontendAIService {
   /**
    * 润色文本
    */
-  async polish(text: string, options: any = {}): Promise<PolishResult> {
+  async polish(text: string, options: any = {}): Promise<AIResult> {
     const {
       focusOn = 'all',
       targetAudience = 'technical'
@@ -89,8 +91,8 @@ export class FrontendAIService {
     const prompt = buildPolishPrompt(text, focusOn, targetAudience);
 
     try {
-      const aiResponse = await this.callAIService(prompt);
-      return this.parsePolishResponse(aiResponse, text);
+      const aiResponse = await this.callAIService(prompt, [], this.getPolishToolOptions());
+      return this.parseAIResponse(aiResponse, 'polish', text);
     } catch (error) {
       console.error('FrontendAIService: Polish failed:', error);
       throw createError('AI_SERVICE_ERROR', `Text polish failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -100,7 +102,7 @@ export class FrontendAIService {
   /**
    * 翻译文本
    */
-  async translate(text: string, options: any = {}): Promise<TranslateResult> {
+  async translate(text: string, options: any = {}): Promise<AIResult> {
     const {
       sourceLanguage = 'auto',
       targetLanguage = 'en-US',
@@ -111,8 +113,16 @@ export class FrontendAIService {
     const prompt = buildTranslatePrompt(text, sourceLanguage, targetLanguage, preserveTerminology, context);
 
     try {
-      const aiResponse = await this.callAIService(prompt);
-      return this.parseTranslateResponse(aiResponse, { text, sourceLanguage, targetLanguage });
+      const aiResponse = await this.callAIService(prompt, [], this.getTranslateToolOptions());
+      let result = this.parseAIResponse(aiResponse, 'translate', text, options);
+      if (preserveTerminology && result.modifiedText) {
+        const originalModifiedText = result.modifiedText;
+        result.modifiedText = this.terminologyService.replace(result.modifiedText);
+        if (originalModifiedText !== result.modifiedText) {
+          result.diffs = this.calculateDiff(text, result.modifiedText);
+        }
+      }
+      return result;
     } catch (error) {
       console.error('FrontendAIService: Translate failed:', error);
       throw createError('AI_SERVICE_ERROR', `Text translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -122,12 +132,12 @@ export class FrontendAIService {
   /**
    * 改写文本
    */
-  async rewrite(text: string, instruction: string, conversationHistory: ChatMessage[] = []): Promise<RewriteResult> {
+  async rewrite(text: string, instruction: string, conversationHistory: ChatMessage[] = []): Promise<AIResult> {
     const prompt = buildRewritePrompt(text, instruction, true);
 
     try {
-      const aiResponse = await this.callAIService(prompt, conversationHistory);
-      return this.parseRewriteResponse(aiResponse, { text, instruction, conversationHistory });
+      const aiResponse = await this.callAIService(prompt, conversationHistory, this.getRewriteToolOptions());
+      return this.parseAIResponse(aiResponse, 'rewrite', text);
     } catch (error) {
       console.error('FrontendAIService: Rewrite failed:', error);
       throw createError('AI_SERVICE_ERROR', `Text rewrite failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -139,8 +149,14 @@ export class FrontendAIService {
    */
   public async callAIService(
     prompt: string,
-    conversationHistory: ChatMessage[] = []
-  ): Promise<string> {
+    conversationHistory: ChatMessage[] = [],
+    options: {
+      tools?: any[];
+      toolChoice?: any;
+      responseFormat?: any;
+      temperature?: number;
+    } = {}
+  ): Promise<any> {
     // 验证配置
     if (!this.config.apiKey || !this.config.baseUrl || !this.config.model) {
       throw createError('INVALID_CONFIG', 'AI service configuration is incomplete');
@@ -163,12 +179,20 @@ export class FrontendAIService {
     messages.push({ role: 'user', content: prompt });
 
     // 构建请求体
-    const requestBody = {
+    const requestBody: any = {
       model: this.config.model,
       messages: messages,
-      temperature: 0.7,
+      temperature: options.temperature ?? 0.1,
       max_tokens: 2000,
     };
+
+    if (options.tools) {
+      requestBody.tools = options.tools;
+      requestBody.tool_choice = options.toolChoice ?? 'required';
+    }
+    if (options.responseFormat) {
+      requestBody.response_format = options.responseFormat;
+    }
 
     // 确保baseUrl以正确的端点结尾
     let endpoint = this.config.baseUrl;
@@ -180,7 +204,7 @@ export class FrontendAIService {
     for (let attempt = 0; attempt < (this.config.maxRetries || 3); attempt++) {
       try {
         console.log(`FrontendAIService: Attempting AI call (${attempt + 1}/${this.config.maxRetries})`);
-        
+
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -193,18 +217,37 @@ export class FrontendAIService {
 
         if (response.ok) {
           const data = await response.json() as any;
-          const content = data.choices?.[0]?.message?.content;
-          
-          if (!content) {
-            throw new Error('Invalid response format from AI service');
+          const choice = data.choices?.[0];
+          const toolCalls = choice?.message?.tool_calls;
+          if (toolCalls && toolCalls.length > 0) {
+            const first = toolCalls[0];
+            const argsStr = first?.function?.arguments || '{}';
+            try {
+              const args = JSON.parse(argsStr);
+              return { tool: first.function?.name, args };
+            } catch (e) {
+              throw new Error('Tool calling arguments JSON 解析失败');
+            }
+          }
+
+          const content = choice?.message?.content;
+
+          // 如果没有content但有tool calls，说明AI使用了工具调用
+          if (!content && (!toolCalls || toolCalls.length === 0)) {
+            console.error('FrontendAIService: No content or tool calls in response', {
+              choice,
+              data
+            });
+            throw new Error('Invalid response format from AI service: no content or tool calls');
           }
 
           console.log('FrontendAIService: AI call successful', {
             attempt: attempt + 1,
-            responseLength: content.length
+            responseLength: content?.length || 0,
+            hasToolCalls: toolCalls?.length > 0
           });
 
-          return content;
+          return content || '';
         } else {
           const errorText = await response.text();
           console.warn('FrontendAIService: AI service returned error', {
@@ -254,217 +297,99 @@ export class FrontendAIService {
   }
 
   /**
-   * 解析检查响应 - 统一格式
+   * 解析AI响应 - 统一的解析方法
    */
-  private parseCheckResponse(aiResponse: string, originalText: string): CheckResult {
+  private parseAIResponse(
+    aiResponse: any,
+    type: 'check' | 'polish' | 'rewrite' | 'translate',
+    originalText: string,
+    options: any = {}
+  ): AIResult {
     try {
-      const response = this.extractJsonFromResponse(aiResponse);
-
-      // 处理解析失败的情况
-      if (response.error) {
-        console.error('Check response parsing failed:', response.error);
-        return {
-          diffs: [],
-          issues: [],
-          correctedText: originalText,
-          summary: '检查失败',
-          hasChanges: false
-        } as any;
+      let response: any;
+      if (aiResponse && typeof aiResponse === 'object') {
+        // tool-calling 返回 { tool, args }
+        response = (aiResponse as any).args ?? aiResponse;
+      } else if (typeof aiResponse === 'string') {
+        response = this.extractJsonFromResponse(aiResponse);
+      } else {
+        response = {};
       }
 
-      const correctedText = response.correctedText || originalText;
+      let modifiedText = originalText;
+      let issues: Issue[] | undefined;
+      let summary = '';
+      let explanation = '';
 
-      // 构建详细的issues信息
-      const issues = (response.issues || []).map((issue: any) => ({
-        type: issue.type || 'grammar',
-        severity: issue.severity || 'info',
-        message: issue.message || '',
-        suggestion: issue.suggestion || '',
-        range: [issue.start || 0, issue.end || 0] as [number, number],
-        originalText: issue.originalText || '',
-        suggestedText: issue.suggestedText || '',
-        confidence: issue.confidence || 0.8
-      }));
+      let sourceLang: string | undefined;
+      let targetLang: string | undefined;
 
-      return {
-        diffs: this.calculateDiff(originalText, correctedText),
-        issues: issues,
-        // 添加额外信息用于UI显示
-        correctedText: correctedText,
-        summary: `发现 ${issues.length} 个问题`,
-        hasChanges: correctedText !== originalText
-      } as any;
-    } catch (error) {
-      console.error('Failed to parse check response:', error);
-      return {
-        diffs: [],
-        issues: [],
-        correctedText: originalText,
-        summary: '检查失败',
-        hasChanges: false
-      } as any;
-    }
-  }
-
-  /**
-   * 解析润色响应 - 统一格式
-   */
-  private parsePolishResponse(aiResponse: string, originalText: string): PolishResult {
-    try {
-      const response = this.extractJsonFromResponse(aiResponse);
-
-      // 处理解析失败的情况
-      if (response.error) {
-        console.error('Polish response parsing failed:', response.error);
-        return {
-          diffs: [],
-          polishedText: originalText,
-          changes: [],
-          summary: '润色失败',
-          hasChanges: false
-        } as any;
+      switch (type) {
+        case 'check':
+          modifiedText = response.correctedText || originalText;
+          issues = (response.issues || []).map((issue: any) => ({
+            type: issue.type || 'grammar',
+            severity: issue.severity || 'info',
+            message: issue.message || '',
+            suggestion: issue.suggestion || '',
+            range: [issue.start || 0, issue.end || 0] as [number, number]
+          }));
+          summary = `发现 ${issues?.length || 0} 个问题。`;
+          break;
+        case 'polish':
+          modifiedText = response.polishedText || originalText;
+          const polishChanges = Array.isArray(response.changes) ? response.changes : [];
+          summary = `进行了 ${polishChanges.length} 处润色。`;
+          // explanation 作为补充说明，保留每条的 description/reason
+          explanation = polishChanges.map((c: any) => c.description || c.reason).filter(Boolean).join('\n');
+          (response as any).changes = polishChanges;
+          break;
+        case 'rewrite':
+          modifiedText = response.rewrittenText || originalText;
+          const rewriteChanges = Array.isArray(response.changes) ? response.changes : [];
+          summary = response.summary || `已根据指令改写文本。`;
+          explanation = response.explanation || '';
+          (response as any).changes = rewriteChanges;
+          break;
+        case 'translate':
+          modifiedText = response.translatedText || originalText;
+          sourceLang =
+            response.sourceLanguage || options.sourceLanguage || 'auto';
+          targetLang = response.targetLanguage || options.targetLanguage || 'en';
+          summary = `从 ${sourceLang} 翻译为 ${targetLang}。`;
+          // 保留术语数组以供UI展示，不拼接进 explanation，避免与其他说明冲突
+          (response.terminology || []).forEach((t: any) => {
+            // 轻量校验字段
+            if (!t.original || !t.translated) return;
+          });
+          (response as any).terminology = response.terminology || [];
+          break;
       }
 
-      const polishedText = response.polishedText || originalText;
-
-      // 构建详细的changes信息
-      const changes = (response.changes || []).map((change: any) => ({
-        type: change.type || 'clarity',
-        description: change.description || change.reason || '',
-        originalText: change.originalText || change.before || '',
-        polishedText: change.polishedText || change.after || '',
-        reason: change.reason || change.description || ''
-      }));
-
       return {
-        diffs: this.calculateDiff(originalText, polishedText),
-        // 添加额外信息用于UI显示
-        polishedText: polishedText,
-        changes: changes,
-        summary: `进行了 ${changes.length} 处润色`,
-        hasChanges: polishedText !== originalText
+        type,
+        originalText,
+        modifiedText,
+        diffs: this.calculateDiff(originalText, modifiedText),
+        issues,
+        changes: (response as any).changes,
+        summary,
+        explanation,
+        sourceLang,
+        targetLang,
+        // 传递术语数组用于 UI 展示（仅 translate 场景存在）
+        terminology: (response as any).terminology
       } as any;
     } catch (error) {
-      console.error('Failed to parse polish response:', error);
+      console.error(`Failed to parse ${type} response:`, error, 'Raw response:', aiResponse);
       return {
+        type,
+        originalText,
+        modifiedText: originalText,
         diffs: [],
-        polishedText: originalText,
-        changes: [],
-        summary: '润色失败',
-        hasChanges: false
-      } as any;
-    }
-  }
-
-  /**
-   * 解析翻译响应
-   */
-  private parseTranslateResponse(aiResponse: string, request: any): TranslateResult {
-    console.log('=== TRANSLATE RESPONSE PARSING ===');
-    console.log('Original AI response:', aiResponse);
-    console.log('Request:', request);
-
-    try {
-      const response = this.extractJsonFromResponse(aiResponse);
-      console.log('Extracted JSON response:', response);
-
-      const translatedText = response.translatedText || request.text;
-
-      // 构建术语信息
-      const terminology = (response.terminology || []).map((term: any) => ({
-        original: term.original || '',
-        translated: term.translated || '',
-        note: term.note || ''
-      }));
-
-      console.log('Parsed terminology:', terminology);
-
-      return {
-        diffs: this.calculateDiff(request.text, translatedText),
-        sourceLang: response.sourceLanguage || request.sourceLanguage || 'auto',
-        targetLang: response.targetLanguage || request.targetLanguage || 'en',
-        // 添加额外信息用于UI显示
-        translatedText: translatedText,
-        terminology: terminology,
-        summary: `从 ${response.sourceLanguage || 'auto'} 翻译为 ${response.targetLanguage || 'en'}`,
-        hasChanges: translatedText !== request.text
-      } as any;
-    } catch (error) {
-      console.error('Failed to parse translate response:', error);
-      return {
-        diffs: [],
-        sourceLang: request.sourceLanguage || 'auto',
-        targetLang: request.targetLanguage || 'en',
-        translatedText: request.text,
-        terminology: [],
-        summary: '翻译失败',
-        hasChanges: false
-      } as any;
-    }
-  }
-
-  /**
-   * 解析改写响应 - 统一格式
-   */
-  private parseRewriteResponse(aiResponse: string, request: any): RewriteResult {
-    console.log('=== REWRITE RESPONSE PARSING ===');
-    console.log('Original AI response:', aiResponse);
-    console.log('Request text:', request.text);
-
-    try {
-      const response = this.extractJsonFromResponse(aiResponse);
-      console.log('Extracted JSON response:', response);
-
-      // 处理解析失败的情况
-      if (response.error) {
-        console.error('Rewrite response parsing failed:', response.error);
-        console.error('Raw response:', response.rawResponse);
-        return {
-          diffs: [],
-          conversationId: `rewrite_${Date.now()}`,
-          rewrittenText: request.text,
-          changes: [],
-          summary: '改写失败：JSON解析错误',
-          explanation: response.rawResponse ? '模型返回了非JSON格式的响应' : '未知错误',
-          suggestions: '请重试或检查网络连接',
-          hasChanges: false
-        } as any;
-      }
-
-      const rewrittenText = response.rewrittenText || request.text;
-
-      // 构建详细的changes信息
-      const changes = (response.changes || []).map((change: any) => ({
-        type: change.type || 'content',
-        description: change.description || '',
-        originalText: change.originalText || '',
-        rewrittenText: change.rewrittenText || '',
-        reason: change.reason || ''
-      }));
-
-      return {
-        diffs: this.calculateDiff(request.text, rewrittenText),
-        conversationId: `rewrite_${Date.now()}`,
-        // 添加额外信息用于UI显示
-        rewrittenText: rewrittenText,
-        changes: changes,
-        summary: response.summary || `进行了 ${changes.length} 处改写`,
-        explanation: response.explanation || '',
-        suggestions: response.suggestions || '',
-        hasChanges: rewrittenText !== request.text
-      } as any;
-    } catch (error) {
-      console.error('Failed to parse rewrite response:', error);
-      return {
-        diffs: [],
-        conversationId: `rewrite_${Date.now()}`,
-        rewrittenText: request.text,
-        changes: [],
-        summary: '改写失败',
-        explanation: '解析响应时发生错误',
-        suggestions: '请重试',
-        hasChanges: false
-      } as any;
+        summary: `解析AI响应失败`,
+        explanation: `无法从AI响应中解析出有效的结果。原始响应: \n${aiResponse}`
+      };
     }
   }
 
@@ -472,102 +397,118 @@ export class FrontendAIService {
    * 从AI响应中提取JSON - 统一的解析方法
    */
   private extractJsonFromResponse(response: string): any {
-    console.log('Extracting JSON from response:', response.substring(0, 200) + '...');
+    console.log('Extracting JSON from response:', response);
 
-    // 多种清理和解析策略
-    const parseStrategies = [
-      // 策略1: 直接解析
-      (text: string) => {
-        return JSON.parse(text.trim());
-      },
+    const sanitize = (text: string) => {
+      // 去掉BOM
+      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+      // 去除Markdown代码块围栏
+      text = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
+      // 统一换行
+      text = text.replace(/\r\n/g, '\n');
+      // 去除多余反引号
+      text = text.replace(/```/g, '');
+      // 去除末尾逗号（简单修复）
+      text = text.replace(/,\s*([}\]])/g, '$1');
+      // 替换非标准引号为标准引号（保守处理）
+      text = text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+      return text.trim();
+    };
 
-      // 策略2: 移除markdown代码块（改进版）
-      (text: string) => {
-        let clean = text.trim();
-        // 处理转义的换行符
-        clean = clean.replace(/\\n/g, '\n');
-        // 移除markdown代码块标记
-        clean = clean.replace(/^\n*```json\s*\n*/, '').replace(/\n*```\s*\n*$/, '');
-        clean = clean.replace(/^\n*```\s*\n*/, '').replace(/\n*```\s*\n*$/, '');
-        return JSON.parse(clean);
-      },
+    // 策略1：直接解析完整JSON
+    try {
+      return JSON.parse(sanitize(response));
+    } catch {}
 
-      // 策略3: 正则提取JSON对象
-      (text: string) => {
-        const match = text.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error('No JSON object found');
-        let jsonStr = match[0];
-        // 清理尾部的markdown标记
-        jsonStr = jsonStr.replace(/\s*```[\s\S]*$/, '');
-        return JSON.parse(jsonStr);
-      },
-
-      // 策略4: 查找第一个{到最后一个}
-      (text: string) => {
-        const firstBrace = text.indexOf('{');
-        const lastBrace = text.lastIndexOf('}');
-        if (firstBrace < 0 || lastBrace <= firstBrace) {
-          throw new Error('No valid JSON boundaries found');
-        }
-        const jsonStr = text.substring(firstBrace, lastBrace + 1);
-        return JSON.parse(jsonStr);
-      },
-
-      // 策略5: 查找```json到```之间的内容（改进版）
-      (text: string) => {
-        // 处理换行符转义的情况
-        const normalizedText = text.replace(/\\n/g, '\n');
-        const jsonBlockMatch = normalizedText.match(/```json\s*([\s\S]*?)\s*```/);
-        if (!jsonBlockMatch) throw new Error('No JSON code block found');
-        return JSON.parse(jsonBlockMatch[1]);
-      }
-    ];
-
-    // 依次尝试每种策略
-    for (let i = 0; i < parseStrategies.length; i++) {
+    // 策略2：提取```json fenced代码块
+    const fenced = response.match(/```json\s*([\s\S]*?)```/i);
+    if (fenced && fenced[1]) {
       try {
-        const parsed = parseStrategies[i](response);
-        console.log(`Successfully parsed JSON with strategy ${i + 1}:`, parsed);
-        return parsed;
-      } catch (error) {
-        console.log(`Strategy ${i + 1} failed:`, error instanceof Error ? error.message : String(error));
-      }
+        return JSON.parse(sanitize(fenced[1]));
+      } catch {}
     }
 
-    console.error('All JSON parsing strategies failed for response:', response);
-
-    // 如果无法解析JSON，返回默认结构
-    return {
-      error: 'Failed to parse JSON response',
-      rawResponse: response,
-      // 根据响应内容猜测类型并返回合适的默认结构
-      correctedText: response,
-      polishedText: response,
-      translatedText: response,
-      rewrittenText: response,
-      changes: [],
-      issues: []
+    // 策略3：括号栈提取最外层完整JSON
+    const extractByBraceStack = (text: string): string | null => {
+      let start = -1, depth = 0;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '{') {
+          if (depth === 0) start = i;
+          depth++;
+        } else if (ch === '}') {
+          depth--;
+          if (depth === 0 && start !== -1) {
+            return text.slice(start, i + 1);
+          }
+        }
+      }
+      return null;
     };
+
+    const byStack = extractByBraceStack(response);
+    if (byStack) {
+      try {
+        return JSON.parse(sanitize(byStack));
+      } catch {}
+    }
+
+    throw new Error('在AI响应中未找到或无法解析有效的JSON结构');
   }
 
   /**
-   * 计算文本差异 - 使用更精确的diff算法
+   * 计算文本差异 - 使用增强的精确diff算法
    */
-  private calculateDiff(originalText: string, modifiedText: string): any[] {
+  private calculateDiff(originalText: string, modifiedText: string): Diff[] {
     if (originalText === modifiedText) {
       return [{ type: 'equal', value: originalText }];
     }
 
-    // 使用简单的LCS算法来计算更精确的diff
-    const originalWords = originalText.split(/(\s+)/);
-    const modifiedWords = modifiedText.split(/(\s+)/);
+    // 先按行级进行 LCS 对齐，再对变更的行做词级 diff，提高可读性
+    const originalLines = originalText.split(/\r?\n/);
+    const modifiedLines = modifiedText.split(/\r?\n/);
+    const lineDiffs = this.computeLineDiff(originalLines, modifiedLines);
 
-    const diffs = this.computeWordDiff(originalWords, modifiedWords);
-    return this.mergeDiffs(diffs);
+    // 将行级 diff 中的 equal 直接返回，将 insert/delete 的行再拆成词级 diff
+    const result: Diff[] = [];
+    for (const ld of lineDiffs) {
+      if (ld.type === 'equal') {
+        result.push({ type: 'equal', value: ld.value + '\n' });
+      } else if (ld.type === 'delete') {
+        // 对删除的行直接标记整行删除并保留换行
+        result.push({ type: 'delete', value: ld.value + '\n' });
+      } else if (ld.type === 'insert') {
+        result.push({ type: 'insert', value: ld.value + '\n' });
+      } else if (ld.type === 'replace') {
+        // 行内容有替换，做增强的词级 diff
+        const tokensA = this.tokenizeForDiff(ld.a);
+        const tokensB = this.tokenizeForDiff(ld.b);
+        const wordDiffs = this.computeWordDiff(tokensA, tokensB);
+        // 合并词级 diff
+        for (const wd of wordDiffs) {
+          result.push(wd);
+        }
+        // 行尾换行
+        result.push({ type: 'equal', value: '\n' });
+      }
+    }
+
+    return this.mergeDiffs(result);
+  }
+
+
+
+  /**
+   * 增强的词级分词（支持中英混排）
+   */
+  private tokenizeForDiff(text: string): string[] {
+    // 使用正则表达式分割，支持中文、英文、数字、标点
+    const tokens = text.match(/[\u4e00-\u9fff]+|[a-zA-Z0-9]+|[^\u4e00-\u9fff\sa-zA-Z0-9]+|\s+/g) || [];
+    return tokens.filter(token => token.length > 0);
   }
 
   /**
-   * 计算单词级别的差异
+   * 计算单词级别的差异（LCS 编辑距离回溯，返回 insert/delete/equal 列表）
    */
   private computeWordDiff(original: string[], modified: string[]): any[] {
     const dp: number[][] = [];
@@ -609,13 +550,64 @@ export class FrontendAIService {
   }
 
   /**
+   * 行级 LCS diff，支持 equal/insert/delete/replace（replace 表示同一位置的行内容变化）
+   */
+  private computeLineDiff(a: string[], b: string[]): Array<any> {
+    const m = a.length;
+    const n = b.length;
+    const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+
+    for (let i = m - 1; i >= 0; i--) {
+      for (let j = n - 1; j >= 0; j--) {
+        if (a[i] === b[j]) dp[i][j] = 1 + dp[i + 1][j + 1];
+        else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+
+    const res: any[] = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (a[i] === b[j]) {
+        res.push({ type: 'equal', value: a[i] });
+        i++; j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        // a[i] 被删除
+        res.push({ type: 'delete', value: a[i] });
+        i++;
+      } else {
+        // b[j] 被插入
+        res.push({ type: 'insert', value: b[j] });
+        j++;
+      }
+    }
+    while (i < m) { res.push({ type: 'delete', value: a[i++] }); }
+    while (j < n) { res.push({ type: 'insert', value: b[j++] }); }
+
+    // 尝试将交替的 delete + insert 合并为 replace
+    const merged: any[] = [];
+    for (let k = 0; k < res.length; k++) {
+      const cur = res[k];
+      const next = res[k + 1];
+      if (cur && next && cur.type === 'delete' && next.type === 'insert') {
+        merged.push({ type: 'replace', a: cur.value, b: next.value });
+        k++; // 跳过 next
+      } else {
+        merged.push(cur);
+      }
+    }
+
+    return merged;
+  }
+
+
+  /**
    * 合并相邻的相同类型的diff
    */
-  private mergeDiffs(diffs: any[]): any[] {
-    if (diffs.length === 0) return diffs;
+  private mergeDiffs(diffs: any[]): Diff[] {
+    if (diffs.length === 0) return diffs as Diff[];
 
-    const merged: any[] = [];
-    let current = { ...diffs[0] };
+    const merged: Diff[] = [];
+    let current: Diff = { ...diffs[0] };
 
     for (let i = 1; i < diffs.length; i++) {
       const diff = diffs[i];
@@ -630,4 +622,154 @@ export class FrontendAIService {
 
     return merged;
   }
+
+  private getCheckToolOptions() {
+    return {
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'return_check_result',
+            description: '返回文本检查的结构化结果',
+            parameters: {
+              type: 'object',
+              properties: {
+                correctedText: { type: 'string', description: '修正后的完整文本' },
+                issues: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      type: { type: 'string', enum: ['grammar','terminology','style','consistency'] },
+                      severity: { type: 'string', enum: ['error','warning','info'] },
+                      message: { type: 'string', description: '简要标题（简短）' },
+                      suggestion: { type: 'string', description: '详细说明与建议（可多行）' },
+                      start: { type: 'number' },
+                      end: { type: 'number' },
+                      originalText: { type: 'string' },
+                      suggestedText: { type: 'string' },
+                      confidence: { type: 'number' }
+                    },
+                    required: ['type','severity','message','suggestion','start','end']
+                  }
+                }
+              },
+              required: ['correctedText','issues']
+            }
+          }
+        }
+      ],
+      toolChoice: { type: 'function', function: { name: 'return_check_result' } },
+      temperature: 0.1
+    };
+  }
+
+  private getPolishToolOptions() {
+    return {
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'return_polish_result',
+          description: '返回文本润色的结构化结果',
+          parameters: {
+            type: 'object',
+            properties: {
+              polishedText: { type: 'string' },
+              changes: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type: { type: 'string', enum: ['clarity','conciseness','tone','structure','grammar'] },
+                    description: { type: 'string' },
+                    originalText: { type: 'string' },
+                    polishedText: { type: 'string' },
+                    reason: { type: 'string' }
+                  },
+                  required: ['type','description']
+                }
+              }
+            },
+            required: ['polishedText']
+          }
+        }
+      }],
+      toolChoice: { type: 'function', function: { name: 'return_polish_result' } },
+      temperature: 0.1
+    };
+  }
+
+  private getRewriteToolOptions() {
+    return {
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'return_rewrite_result',
+          description: '返回文本改写的结构化结果',
+          parameters: {
+            type: 'object',
+            properties: {
+              rewrittenText: { type: 'string' },
+              changes: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type: { type: 'string', enum: ['content','structure','style','tone'] },
+                    description: { type: 'string' },
+                    originalText: { type: 'string' },
+                    rewrittenText: { type: 'string' },
+                    reason: { type: 'string' }
+                  },
+                  required: ['type','description','reason']
+                }
+              },
+              summary: { type: 'string' },
+              explanation: { type: 'string' }
+            },
+            required: ['rewrittenText','changes','summary','explanation']
+          }
+        }
+      }],
+      toolChoice: { type: 'function', function: { name: 'return_rewrite_result' } },
+      temperature: 0.1
+    };
+  }
+
+
+  private getTranslateToolOptions() {
+    return {
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'return_translate_result',
+          description: '返回文本翻译的结构化结果',
+          parameters: {
+            type: 'object',
+            properties: {
+              translatedText: { type: 'string' },
+              sourceLanguage: { type: 'string' },
+              targetLanguage: { type: 'string' },
+              terminology: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    original: { type: 'string' },
+                    translated: { type: 'string' },
+                    note: { type: 'string' }
+                  },
+                  required: ['original','translated']
+                }
+              }
+            },
+            required: ['translatedText']
+          }
+        }
+      }],
+      toolChoice: { type: 'function', function: { name: 'return_translate_result' } },
+      temperature: 0.1
+    };
+  }
+
 }

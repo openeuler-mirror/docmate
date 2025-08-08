@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { DiffSegment } from '@docmate/shared';
+import { Diff } from '@docmate/shared';
 
 interface DiffViewProps {
-  diffs: DiffSegment[];
+  diffs: Diff[];
   onAccept: (suggestion: string) => void;
   onReject: () => void;
   title?: string;
@@ -27,7 +27,7 @@ const DiffView: React.FC<DiffViewProps> = ({
   className = "",
   showActions = true
 }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // 计算diff统计信息
@@ -79,13 +79,7 @@ const DiffView: React.FC<DiffViewProps> = ({
       <div className="diff-header">
         <div className="diff-title">
           <h3>{title}</h3>
-          <button 
-            className="expand-toggle"
-            onClick={() => setIsExpanded(!isExpanded)}
-            aria-label={isExpanded ? "收起" : "展开"}
-          >
-            {isExpanded ? '▼' : '▶'}
-          </button>
+          <span className="spacer" />
         </div>
         
         {showStats && (

@@ -1,14 +1,14 @@
 import { ConversationItem } from '@docmate/shared';
 import { Message } from './Message';
-import { ResultCard } from './ResultCard';
+import { UnifiedResultCard } from './UnifiedResultCard';
 
 interface ChatWindowProps {
   conversations: ConversationItem[];
   onClear: () => void;
-  onDismissResult?: (conversationId: string) => void;
+  onDismissDiff: (conversationId: string) => void;
 }
 
-export function ChatWindow({ conversations, onDismissResult }: ChatWindowProps) {
+export function ChatWindow({ conversations, onDismissDiff }: ChatWindowProps) {
   return (
     <div className="chat-window">
       <div className="chat-content">
@@ -30,10 +30,9 @@ export function ChatWindow({ conversations, onDismissResult }: ChatWindowProps) 
                 />
 
                 {conversation.results && (
-                  <ResultCard
-                    type={conversation.operation!}
-                    results={conversation.results}
-                    onDismiss={() => onDismissResult?.(conversation.id)}
+                  <UnifiedResultCard
+                    result={conversation.results}
+                    onDismissDiff={() => onDismissDiff(conversation.id)}
                   />
                 )}
               </div>

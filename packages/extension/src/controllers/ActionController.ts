@@ -5,18 +5,18 @@ import {
 } from '@docmate/utils';
 import {
   AIServiceConfig,
-  CheckResult,
-  PolishResult,
-  TranslateResult,
-  FullTranslateResult,
-  RewriteResult,
+  AIResult,
   ChatMessage,
-  createError
+  createError,
+  ErrorCode
 } from '@docmate/shared';
 import { AuthService, AuthStatus } from '../services/AuthService';
 import { OAuthService } from '../services/OAuthService';
 import { BackendAIService } from '../services/BackendAIService';
 import { FrontendAIService } from '../services/FrontendAIService';
+import { DismissedStateService } from '../services/DismissedStateService';
+import { ErrorHandlingService } from '../services/ErrorHandlingService';
+import { SmartApplyService } from '../services/SmartApplyService';
 import { userConfigService, UserAIConfig } from '../services/UserConfigService';
 
 export class ActionController {
@@ -25,6 +25,7 @@ export class ActionController {
   private oauthService: OAuthService | null = null;
   private backendAIService: BackendAIService | null = null;
   private frontendAIService: FrontendAIService | null = null;
+  private dismissedStateService: DismissedStateService | null = null;
 
   constructor() {
     // 初始化服务
@@ -37,10 +38,17 @@ export class ActionController {
   /**
    * 初始化认证服务
    */
-  public async initializeAuth(secretStorage: vscode.SecretStorage): Promise<void> {
+  public async initializeAuth(secretStorage: vscode.SecretStorage, context?: vscode.ExtensionContext): Promise<void> {
     this.authService = AuthService.getInstance(secretStorage);
     this.oauthService = OAuthService.getInstance(this.authService);
     this.backendAIService = new BackendAIService(this.authService);
+
+    // 初始化DismissedStateService
+    if (context) {
+      this.dismissedStateService = new DismissedStateService(context);
+      // 清理过期的dismissed状态
+      await this.dismissedStateService.cleanupExpiredStates();
+    }
 
     // 初始化前端AI服务
     await this.initializeFrontendAIService();
@@ -175,21 +183,28 @@ export class ActionController {
   /**
    * 处理检查命令 - 返回新的diff格式
    */
-  private async handleCheck(payload: any): Promise<CheckResult> {
+  private async handleCheck(payload: any): Promise<AIResult> {
     let { text, textSource, options = {} } = payload;
 
     // 如果没有传入文本，自动获取全文
     if (!text || !text.trim()) {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        throw createError('NO_ACTIVE_EDITOR', 'No active editor found');
+        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
       }
-      text = editor.document.getText();
-      textSource = 'full';
+
+      // 检查是否有选择的文本
+      if (!editor.selection.isEmpty) {
+        text = editor.document.getText(editor.selection);
+        textSource = 'selected';
+      } else {
+        text = editor.document.getText();
+        textSource = 'full';
+      }
     }
 
     if (!text || typeof text !== 'string' || !text.trim()) {
-      throw createError('INVALID_TEXT', 'Text is required for check operation');
+      throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for check operation');
     }
 
     // 检查认证状态 - 暂时移除认证要求
@@ -205,55 +220,53 @@ export class ActionController {
 
     // 使用前端AI服务，传递文本来源信息
     const result = await this.frontendAIService.check(text, { ...options, textSource });
-    return {
-      ...result,
-      textSource
-    };
+    return result;
   }
 
   /**
    * 处理润色命令 - 返回新的diff格式
    */
-  private async handlePolish(payload: any): Promise<PolishResult> {
+  private async handlePolish(payload: any): Promise<AIResult> {
     let { text, textSource, options = {} } = payload;
 
     // 如果没有传入文本，自动获取全文
     if (!text || !text.trim()) {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        throw createError('NO_ACTIVE_EDITOR', 'No active editor found');
+        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
       }
-      text = editor.document.getText();
-      textSource = 'full';
+
+      // 检查是否有选择的文本
+      if (!editor.selection.isEmpty) {
+        text = editor.document.getText(editor.selection);
+        textSource = 'selected';
+      } else {
+        text = editor.document.getText();
+        textSource = 'full';
+      }
     }
 
     if (!text || typeof text !== 'string' || !text.trim()) {
-      throw createError('INVALID_TEXT', 'Text is required for polish operation');
+      throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for polish operation');
     }
-
-    // 检查认证状态 - 暂时移除认证要求
-    // const isAuthenticated = await this.ensureAuthenticated();
-    // if (!isAuthenticated) {
-    //   throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
-    // }
 
     // 使用前端AI服务
     if (!this.frontendAIService) {
-      throw createError('FRONTEND_AI_SERVICE_NOT_INITIALIZED', 'Frontend AI service not initialized');
+      throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
     }
+
+    console.log('ActionController: Polish - text length:', text.length);
+    console.log('ActionController: Polish - textSource:', textSource);
 
     // 使用前端AI服务，传递文本来源信息
     const result = await this.frontendAIService.polish(text, { ...options, textSource });
-    return {
-      ...result,
-      textSource
-    };
+    return result;
   }
 
   /**
    * 处理翻译命令 - 返回新的diff格式
    */
-  private async handleTranslate(payload: any): Promise<TranslateResult | FullTranslateResult> {
+  private async handleTranslate(payload: any): Promise<AIResult> {
     let { text, textSource, options = {}, fullDocument } = payload;
 
     // 统一文本处理逻辑
@@ -302,136 +315,123 @@ export class ActionController {
     }
 
     // 根据文本来源决定处理方式
-    if (isFullDocument) {
-      // 全文翻译，返回FullTranslateResult
-      const result = await this.frontendAIService.translate(finalText, options);
-      // 从diffs中提取翻译后的文本
-      let translatedText = finalText;
-      if (result.diffs.length > 0) {
-        // 查找insert类型的diff，这包含翻译后的文本
-        const insertDiff = result.diffs.find(diff => diff.type === 'insert');
-        if (insertDiff) {
-          translatedText = insertDiff.value;
-        }
-      }
+    // 统一调用translate服务
+    const result = await this.frontendAIService.translate(finalText, options);
 
-      return {
-        translatedText: translatedText,
-        sourceLang: result.sourceLang,
-        targetLang: result.targetLang,
-        isFullDocument: true,
-        textSource: textSource || 'full'
-      } as FullTranslateResult;
-    } else {
-      // 选中文本翻译，返回TranslateResult
-      return await this.frontendAIService.translate(finalText, options);
-    }
+    return result;
   }
 
 
   /**
    * 处理改写命令
    */
-  private async handleRewrite(payload: any): Promise<RewriteResult> {
+  private async handleRewrite(payload: any): Promise<AIResult> {
     let { text, textSource, conversationHistory = [], originalText } = payload;
 
-    if (!text || typeof text !== 'string') {
-      throw createError('INVALID_TEXT', 'Text is required for rewrite operation');
+    // text是改写指令，originalText是要改写的文本
+    const instruction = text || payload.instruction || '请改写这段文本，使其更加清晰和简洁';
+
+    if (!instruction || typeof instruction !== 'string') {
+      throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, '改写指令不能为空');
     }
 
     // 如果没有传入原始文本，自动获取全文
     if (!originalText || !originalText.trim()) {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        throw createError('NO_ACTIVE_EDITOR', 'No active editor found');
+        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
       }
-      originalText = editor.document.getText();
-      textSource = 'full';
+
+      // 检查是否有选择的文本
+      if (!editor.selection.isEmpty) {
+        originalText = editor.document.getText(editor.selection);
+        textSource = 'selected';
+      } else {
+        originalText = editor.document.getText();
+        textSource = 'full';
+      }
     }
 
-    // 检查认证状态 - 暂时移除认证要求
-    // const isAuthenticated = await this.ensureAuthenticated();
-    // if (!isAuthenticated) {
-    //   throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
-    // }
+    if (!originalText || !originalText.trim()) {
+      throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, '没有找到要改写的文本内容');
+    }
 
     // 使用前端AI服务
     if (!this.frontendAIService) {
-      throw createError('FRONTEND_AI_SERVICE_NOT_INITIALIZED', 'Frontend AI service not initialized');
+      throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
     }
 
-    // 从payload中提取用户的改写指令
-    const instruction = payload.text || payload.instruction || '请改写这段文本，使其更加清晰和简洁';
-    const textToRewrite = originalText || text;
+    console.log('ActionController: Rewrite - instruction:', instruction);
+    console.log('ActionController: Rewrite - originalText length:', originalText.length);
+    console.log('ActionController: Rewrite - textSource:', textSource);
 
-    const result = await this.frontendAIService.rewrite(textToRewrite, instruction, conversationHistory);
+    const result = await this.frontendAIService.rewrite(originalText, instruction, conversationHistory);
 
-    return {
-      ...result,
-      textSource
-    };
+    return result;
   }
 
   /**
    * 处理应用建议命令
    */
-  private async handleApplySuggestion(payload: any): Promise<{ status: string }> {
+  private async handleApplySuggestion(payload: any): Promise<{ status: string; message?: string }> {
     const { text, originalText } = payload;
     console.log('ActionController: handleApplySuggestion called with text:', text);
     console.log('ActionController: originalText:', originalText);
 
     if (!text || typeof text !== 'string') {
-      throw createError('INVALID_TEXT', 'Text is required for apply suggestion operation');
+      throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for apply suggestion operation');
     }
 
-    // 获取当前活动编辑器
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      console.error('ActionController: No active editor found');
-      throw createError('NO_ACTIVE_EDITOR', 'No active editor found');
-    }
+    try {
+      // 使用SmartApplyService进行智能应用
+      const result = await SmartApplyService.applyTextSuggestion(text, originalText);
 
-    console.log('ActionController: Editor found, selection:', editor.selection);
-    console.log('ActionController: Selection isEmpty:', editor.selection.isEmpty);
-
-    // 应用建议到编辑器
-    const success = await editor.edit(editBuilder => {
-      if (editor.selection.isEmpty) {
-        // 如果没有选择文本，尝试在文档中查找原文并替换
-        if (originalText) {
-          const documentText = editor.document.getText();
-          const originalIndex = documentText.indexOf(originalText);
-
-          if (originalIndex !== -1) {
-            // 找到原文，只替换这部分
-            const startPos = editor.document.positionAt(originalIndex);
-            const endPos = editor.document.positionAt(originalIndex + originalText.length);
-            const range = new vscode.Range(startPos, endPos);
-            console.log('ActionController: Replacing found original text, range:', range);
-            editBuilder.replace(range, text);
-          } else {
-            // 找不到原文，提示用户选择文本
-            console.warn('ActionController: Original text not found in document');
-            throw createError('ORIGINAL_TEXT_NOT_FOUND', '无法找到原文，请选择要修改的文本');
-          }
-        } else {
-          // 没有原文信息，提示用户选择文本
-          throw createError('NO_SELECTION_NO_ORIGINAL', '请选择要修改的文本，或确保提供了原文信息');
+      if (result.success) {
+        // 应用成功，标记为已处理
+        if (this.dismissedStateService && originalText) {
+          const editor = vscode.window.activeTextEditor;
+          const fileUri = editor?.document.uri.toString();
+          await this.dismissedStateService.markDismissed(originalText, fileUri);
+          console.log('ActionController: Marked suggestion as dismissed');
         }
+
+        return {
+          status: 'applied',
+          message: result.message || '已成功应用建议'
+        };
       } else {
-        // 替换选中的文本
-        console.log('ActionController: Replacing selected text, selection:', editor.selection);
-        editBuilder.replace(editor.selection, text);
+        throw ErrorHandlingService.createError(
+          ErrorCode.ORIGINAL_TEXT_NOT_FOUND,
+          result.message || '应用建议失败'
+        );
       }
-    });
+    } catch (error) {
+      console.error('ActionController: Apply suggestion failed:', error);
 
-    console.log('ActionController: Edit operation success:', success);
-
-    if (!success) {
-      throw createError('EDIT_FAILED', 'Failed to apply text changes to editor');
+      // 转换为友好错误
+      const friendlyError = ErrorHandlingService.fromError(error);
+      throw friendlyError;
     }
+  }
 
-    return { status: 'applied' };
+  /**
+   * 获取已处理状态
+   */
+  public getDismissedStates(): string[] {
+    if (!this.dismissedStateService) {
+      return [];
+    }
+    return this.dismissedStateService.getAllDismissedKeys();
+  }
+
+  /**
+   * 检查是否已处理
+   */
+  public isDismissed(originalText: string, fileUri?: string): boolean {
+    if (!this.dismissedStateService) {
+      return false;
+    }
+    return this.dismissedStateService.isDismissed(originalText, fileUri);
   }
 
   /**

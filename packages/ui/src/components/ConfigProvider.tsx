@@ -9,9 +9,10 @@ interface AIConfig {
 
 interface ConfigProviderProps {
   onConfigSaved?: () => void;
+  onBack: () => void;
 }
 
-export function ConfigProvider({ onConfigSaved }: ConfigProviderProps) {
+export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
   const [config, setConfig] = useState<AIConfig>({
     baseUrl: 'https://api.openai.com/v1',
     apiKey: '',
@@ -20,6 +21,7 @@ export function ConfigProvider({ onConfigSaved }: ConfigProviderProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Partial<AIConfig>>({});
   const [showApiKey, setShowApiKey] = useState(false);
+  const [testStatus, setTestStatus] = useState<{ ok?: boolean; message?: string } | null>(null);
 
   // 加载现有配置
   useEffect(() => {
@@ -100,6 +102,7 @@ export function ConfigProvider({ onConfigSaved }: ConfigProviderProps) {
         if (message.command === 'config' && message.result) {
           if (message.result.success) {
             onConfigSaved?.();
+            onBack();
           } else if (message.result.error) {
             setErrors({ baseUrl: message.result.error });
           }
@@ -125,6 +128,7 @@ export function ConfigProvider({ onConfigSaved }: ConfigProviderProps) {
 
     setIsLoading(true);
     setErrors({});
+    setTestStatus(null);
 
     vscodeApi.postMessage({
       command: 'config',
@@ -138,11 +142,12 @@ export function ConfigProvider({ onConfigSaved }: ConfigProviderProps) {
     const unsubscribe = vscodeApi.onMessage((message) => {
       if (message.command === 'config' && message.result && message.result.action === 'test') {
         if (message.result.success) {
-          // 显示成功消息
-          setErrors({ baseUrl: '' }); // 清除错误
-          alert('连接测试成功！');
+          // 成功：内联提示
+          setErrors({ baseUrl: '' });
+          setTestStatus({ ok: true, message: message.result.message || '连接测试成功！' });
         } else {
           setErrors({ baseUrl: message.result.error || '连接测试失败' });
+          setTestStatus({ ok: false, message: message.result.error || '连接测试失败' });
         }
         setIsLoading(false);
         unsubscribe();
@@ -152,6 +157,7 @@ export function ConfigProvider({ onConfigSaved }: ConfigProviderProps) {
     // 设置超时
     setTimeout(() => {
       setIsLoading(false);
+      setTestStatus({ ok: false, message: '连接测试超时，请检查网络或配置' });
       unsubscribe();
     }, 10000);
   };
@@ -160,10 +166,18 @@ export function ConfigProvider({ onConfigSaved }: ConfigProviderProps) {
     <div className="config-provider">
       <div className="config-header">
         <h2>🔧 AI服务配置</h2>
+        <button className="back-button" onClick={onBack} title="返回">
+          &lt; 返回
+        </button>
         <p>请配置您的AI服务信息以使用DocMate的AI功能</p>
       </div>
 
       <div className="config-form">
+        {testStatus && (
+          <div className={`test-status ${testStatus.ok ? 'ok' : 'fail'}`}>
+            {testStatus.ok ? '✅' : '❌'} {testStatus.message}
+          </div>
+        )}
         <div className="form-group">
           <label htmlFor="baseUrl">基础URL</label>
           <input
@@ -218,7 +232,7 @@ export function ConfigProvider({ onConfigSaved }: ConfigProviderProps) {
           />
           {errors.model && <span className="error-message">{errors.model}</span>}
           <small className="help-text">
-            要使用的AI模型名称，例如：gpt-3.5-turbo, gpt-4
+            具有Tools使用功能的AI模型名称，例如：deepseek-v3, qwen3-32B
           </small>
         </div>
 

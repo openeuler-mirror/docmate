@@ -3,7 +3,8 @@ import {
   HostResult,
   ConversationItem,
   OperationState,
-  generateId
+  generateId,
+  AIResult
 } from '@docmate/shared';
 import { vscodeApi } from './vscodeApi';
 import { ChatWindow } from './components/ChatWindow';
@@ -22,6 +23,12 @@ interface AppState {
   isAuthenticated: boolean;
   isConfigured: boolean;
   isCheckingConfig: boolean;
+  view: 'chat' | 'config';
+  errorInfo?: {
+    message: string;
+    code?: string;
+    suggestion?: string;
+  };
 }
 
 export default function App() {
@@ -35,6 +42,7 @@ export default function App() {
     isAuthenticated: true, // 默认允许使用AI功能，不需要登录
     isConfigured: false, // 默认未配置，需要检查
     isCheckingConfig: true, // 正在检查配置状态
+    view: 'chat',
   });
 
   // 添加错误边界
@@ -52,9 +60,6 @@ export default function App() {
     try {
       // 监听来自扩展的消息
       const unsubscribe = vscodeApi.onMessage(handleMessage);
-
-      // 加载初始设置 - 暂时注释掉，使用新的配置系统
-      // vscodeApi.settings('get');
 
       // 检查配置状态
       console.log('App: Sending config status request');
@@ -86,19 +91,27 @@ export default function App() {
     });
   }, [state.conversations]);
 
+  // 当配置检查完成且未配置时，自动导航到配置页面
+  useEffect(() => {
+    if (state.view === 'chat' && !state.isCheckingConfig && !state.isConfigured) {
+      navigateTo('config');
+    }
+  }, [state.view, state.isCheckingConfig, state.isConfigured]);
+
+
   /**
    * 处理来自扩展的消息
    */
   const handleMessage = (message: HostResult) => {
+    // 优先处理选中文本引用，保证引用组件及时更新
+    if (message.command === 'renderResult' && (message as any).payload?.data?.type === 'selectedText') {
+      setState(prev => ({ ...prev, selectedText: (message as any).payload?.data?.text || '' }));
+      return;
+    }
+
     switch (message.command) {
       case 'renderResult':
         handleRenderResult(message as HostResult);
-        break;
-      case 'renderCheckResult':
-      case 'renderPolishResult':
-      case 'renderTranslateResult':
-      case 'renderRewriteResult':
-        handleExtendedResult(message as HostResult);
         break;
       case 'error':
         handleError(message as HostResult);
@@ -133,7 +146,8 @@ export default function App() {
       console.log('App: Processing config saved:', result);
       setState(prev => ({
         ...prev,
-        isConfigured: true
+        isConfigured: true,
+        view: 'chat' // 配置保存后，切换回聊天视图
       }));
     }
   };
@@ -144,7 +158,8 @@ export default function App() {
   const handleConfigSaved = () => {
     setState(prev => ({
       ...prev,
-      isConfigured: true
+      isConfigured: true,
+      view: 'chat' // 配置保存后，切换回聊天视图
     }));
   };
 
@@ -152,26 +167,20 @@ export default function App() {
    * 处理渲染结果
    */
   const handleRenderResult = (message: HostResult) => {
-    const data = message.payload?.data;
+    const result = message.result as AIResult;
 
-    if (data && typeof data === 'object' && 'type' in data && (data as any).type === 'selectedText') {
-      setState(prev => ({
-        ...prev,
-        selectedText: (data as any).text,
-      }));
-      return;
-    }
-
-    const type = message.payload?.type;
-    if (type && data) {
-      // 将结果附加到最后一个用户消息上，不创建新的助手消息
+    if (result) {
       setState(prev => {
         const conversations = [...prev.conversations];
         const lastConversation = conversations[conversations.length - 1];
 
+        // 若已存在上一条对话的结果且标记为 dismissed，则保留 dismissed 状态
+        if (lastConversation && lastConversation.results && (lastConversation.results as any).dismissed) {
+          (result as any).dismissed = true;
+        }
+
         if (lastConversation && lastConversation.type === 'user') {
-          // 将结果附加到最后一个用户消息
-          lastConversation.results = data as any;
+          lastConversation.results = result;
         }
 
         return {
@@ -181,96 +190,31 @@ export default function App() {
             ...prev.operationState,
             isLoading: false,
             error: undefined,
-            lastOperation: type,
+            lastOperation: result.type,
           },
         };
       });
     }
   };
 
-  /**
-   * 处理扩展结果（新的diff格式）
-   */
-  const handleExtendedResult = (message: HostResult) => {
-    if (!message.payload) return;
-    const { type, diffs, issues, changes, sourceLang, targetLang, message: resultMessage, success } = message.payload;
-
-    if (type) {
-      // 处理fullTranslate的特殊情况
-      if (type === 'fullTranslate') {
-        // 将结果附加到最后一个用户消息上，保持一致性
-        setState(prev => {
-          const conversations = [...prev.conversations];
-          const lastConversation = conversations[conversations.length - 1];
-
-          if (lastConversation && lastConversation.type === 'user') {
-            // 将结果附加到最后一个用户消息
-            lastConversation.results = {
-              message: resultMessage,
-              success,
-              sourceLang,
-              targetLang,
-            };
-          }
-
-          return {
-            ...prev,
-            conversations,
-            operationState: {
-              ...prev.operationState,
-              isLoading: false,
-              error: undefined,
-              lastOperation: type,
-            },
-          };
-        });
-        return;
-      }
-
-      // 处理其他有diffs的情况
-      if (diffs) {
-        // 将结果附加到最后一个用户消息上，不创建新的助手消息
-        setState(prev => {
-          const conversations = [...prev.conversations];
-          const lastConversation = conversations[conversations.length - 1];
-
-          if (lastConversation && lastConversation.type === 'user') {
-            // 将结果附加到最后一个用户消息
-            lastConversation.results = {
-              diffs,
-              issues,
-              changes,
-              sourceLang,
-              targetLang,
-            };
-          }
-
-          return {
-            ...prev,
-            conversations,
-            operationState: {
-              ...prev.operationState,
-              isLoading: false,
-              error: undefined,
-              lastOperation: type,
-            },
-          };
-        });
-      }
-    }
-  };
 
   /**
    * 处理错误
    */
   const handleError = (message: HostResult) => {
+    const payload = message.payload;
     setState(prev => ({
       ...prev,
       operationState: {
         ...prev.operationState,
         isLoading: false,
-        error: message.payload?.error,
+        error: payload?.error,
       },
+      errorInfo: {
+        message: payload?.error || '发生未知错误',
+        code: payload?.code,
+        suggestion: payload?.suggestion
+      }
     }));
   };
 
@@ -363,33 +307,6 @@ export default function App() {
   };
 
   /**
-   * 标记特定对话的结果为已处理（不删除，只是标记状态）
-   */
-  const dismissResult = (conversationId: string) => {
-    setState(prev => {
-      const newState = {
-        ...prev,
-        conversations: prev.conversations.map(conv =>
-          conv.id === conversationId && conv.results
-            ? {
-                ...conv,
-                results: {
-                  ...conv.results,
-                  dismissed: true,
-                  processedAt: new Date().toISOString()
-                }
-              }
-            : conv
-        ),
-      };
-
-      // 保存状态到VS Code
-      vscodeApi.setState(newState);
-      return newState;
-    });
-  };
-
-  /**
    * 刷新
    */
   const refresh = () => {
@@ -399,6 +316,17 @@ export default function App() {
       operationState: {
         isLoading: false,
       },
+    }));
+  };
+
+  /**
+   * 导航到指定视图
+   * @param view 要导航到的视图
+   */
+  const navigateTo = (view: 'chat' | 'config') => {
+    setState(prev => ({
+      ...prev,
+      view
     }));
   };
 
@@ -416,6 +344,60 @@ export default function App() {
     );
   }
 
+  const renderChatView = () => {
+    if (state.isCheckingConfig) {
+      return (
+        <div className="config-checking">
+          <LoadingSpinner message="正在检查配置..." />
+        </div>
+      );
+    }
+
+    if (state.isConfigured) {
+      return (
+        <>
+          <ChatWindow
+            conversations={state.conversations}
+            onClear={clearConversations}
+            onDismissDiff={(conversationId) => {
+              setState(prev => {
+                const conversations = prev.conversations.map(c =>
+                  c.id === conversationId && c.results ? { ...c, results: { ...(c.results as any), dismissed: true } } : c
+                );
+                return { ...prev, conversations };
+              });
+            }}
+          />
+
+          {state.operationState.isLoading && (
+            <LoadingSpinner message={`正在${getOperationName(state.operationState.lastOperation)}...`} />
+          )}
+
+          <InputPanel
+            selectedText={state.selectedText}
+            onExecute={executeOperation}
+            disabled={state.operationState.isLoading}
+            authRequired={false}
+          />
+        </>
+      );
+    }
+    // 如果未配置，useEffect 会处理导航，这里返回 null
+    return null;
+  };
+
+  const renderContent = () => {
+    switch (state.view) {
+      case 'config':
+        return <ConfigProvider onConfigSaved={handleConfigSaved} onBack={() => navigateTo('chat')} />;
+      case 'chat':
+        return renderChatView();
+      default:
+        // 作为后备，可以渲染一个空状态或错误
+        return null;
+    }
+  };
+
   return (
     <div className="app">
       <CompactHeader
@@ -423,48 +405,27 @@ export default function App() {
         onRefresh={refresh}
         hasConversations={state.conversations.length > 0}
         onAuthChange={handleAuthChange}
+        onNavigateToConfig={() => navigateTo('config')}
       />
 
-      {state.operationState.error && (
+      {state.errorInfo && (
         <ErrorMessage
-          message={state.operationState.error}
+          message={state.errorInfo.message}
+          code={state.errorInfo.code}
+          suggestion={state.errorInfo.suggestion}
           onDismiss={() => setState(prev => ({
             ...prev,
             operationState: {
               ...prev.operationState,
               error: undefined,
             },
+            errorInfo: undefined
           }))}
         />
       )}
 
       <div className="app-content">
-        {state.isCheckingConfig ? (
-          <div className="config-checking">
-            <LoadingSpinner message="正在检查配置..." />
-          </div>
-        ) : !state.isConfigured ? (
-          <ConfigProvider onConfigSaved={handleConfigSaved} />
-        ) : (
-          <>
-            <ChatWindow
-              conversations={state.conversations}
-              onClear={clearConversations}
-              onDismissResult={dismissResult}
-            />
-
-            {state.operationState.isLoading && (
-              <LoadingSpinner message={`正在${getOperationName(state.operationState.lastOperation)}...`} />
-            )}
-
-            <InputPanel
-              selectedText={state.selectedText}
-              onExecute={executeOperation}
-              disabled={state.operationState.isLoading}
-              authRequired={false}
-            />
-          </>
-        )}
+        {renderContent()}
       </div>
     </div>
   );

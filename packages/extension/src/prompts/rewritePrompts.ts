@@ -6,126 +6,37 @@
  * 构建改写提示词
  */
 export function buildRewritePrompt(
+// 重要：本助手面向 openEuler 文档写作场景，你是 openEuler 文档团队的写作与审校助手，遵循 openEuler 的术语与风格规范，保持专业、准确、简洁。
+
   originalText: string,
   userInstruction: string,
   preserveTerminology: boolean = true
 ): string {
-  const terminologyNote = preserveTerminology 
-    ? '\n\n特别注意：请保持技术术语的准确性，不要随意更改专业术语。' 
+  const terminologyNote = preserveTerminology
+    ? '\n\n特别注意：请保持技术术语的准确性，不要随意更改专业术语。'
     : '';
-  
-  return `你是一个专业的文档改写助手。你的任务是根据用户的指令对文本进行改写。
+
+  return `你是 openEuler 文档团队的写作与审校助手，遵循 openEuler 的术语与风格规范，保持专业、准确、简洁。
+请根据以下用户指令对文本进行改写。
 
 改写要求：
-1. 保持原文的核心意思和重要信息
-2. 根据用户的具体指令进行调整
-3. 确保改写后的文本流畅、准确、易读
-4. 如果用户没有特殊要求，保持原文的格式和结构
-5. 对于技术文档，保持专业术语的准确性${terminologyNote}
+1. 保持原文的核心信息与技术准确性
+2. 根据用户的具体指令进行调整，语气统一、行文简洁
+3. 若 preserveTerminology=true 则严格保留既有术语${terminologyNote}
 
-当前需要改写的原文：
+【原文】
 ${originalText}
 
-用户指令：${userInstruction}
+【用户指令】
+${userInstruction}
 
-请按照以下JSON格式返回改写结果：
-
-\`\`\`json
-{
-  "rewrittenText": "改写后的完整文本",
-  "changes": [
-    {
-      "type": "content|structure|style|tone",
-      "description": "具体修改说明",
-      "originalText": "被修改的原文片段",
-      "rewrittenText": "改写后的片段",
-      "reason": "改写的具体原因"
-    }
-  ],
-  "summary": "整体改写效果总结",
-  "explanation": "详细的改写说明和思路",
-  "suggestions": "进一步优化建议"
-}
-\`\`\`
-
-重要要求：
-1. rewrittenText必须包含完整的改写后文本
-2. changes数组必须包含所有重要的修改点
-3. 每个change都要有清晰的description和reason
-4. summary要简洁地总结改写效果
-5. explanation要详细说明改写思路
-6. 只返回JSON格式，不要包含其他解释文字`;
+重要：你必须仅通过调用函数 return_rewrite_result 返回结构化结果；不要输出任何其它文本、思考、解释或Markdown代码块。
+请确保返回对象必须包含以下字段：
+- rewrittenText（完整改写文本）
+- changes（数组，列出每条改写项，含 type/description/reason；其中 description 作为“简短标题”，不超过12个汉字或24个字符，避免标点结尾）
+- summary（一句话总结，例如：已根据指令改写文本。）
+- explanation（详细说明你的改写思路与原因）
+并确保上述字段都出现且非空（如无内容需填入合理说明）。`;
 }
 
-/**
- * 构建风格改写提示词
- */
-export function buildStyleRewritePrompt(text: string, requirements: string): string {
-  return `请根据以下要求改写文本：
 
-原文：
-${text}
-
-改写要求：${requirements}
-
-请按照以下JSON格式返回改写结果：
-
-{
-  "rewrittenText": "改写后的完整文本",
-  "styleChanges": [
-    {
-      "aspect": "改写方面",
-      "description": "具体改动说明",
-      "before": "改写前",
-      "after": "改写后"
-    }
-  ]
-}
-
-只返回JSON格式，不要包含其他文字。`;
-}
-
-/**
- * 构建对话式改写提示词（用于聊天功能）
- */
-export function buildConversationalRewritePrompt(
-  originalText: string,
-  userInstruction: string,
-  conversationContext: string = ''
-): string {
-  const contextSection = conversationContext 
-    ? `\n对话上下文：\n${conversationContext}\n` 
-    : '';
-  
-  return `你是一个专业的文档改写助手，正在与用户进行对话式的文档改写。${contextSection}
-
-当前需要改写的文本：
-${originalText}
-
-用户的改写指令：${userInstruction}
-
-请根据用户的指令和对话上下文，对文本进行改写。改写时请：
-1. 理解用户的真实意图
-2. 保持文档的专业性
-3. 确保改写后的文本符合用户的期望
-4. 如果指令不够明确，可以在回复中说明你的理解
-
-请按照以下JSON格式返回改写结果：
-
-{
-  "rewrittenText": "改写后的完整文本",
-  "explanation": "改写说明和你的理解",
-  "changes": [
-    {
-      "type": "content|structure|style|tone",
-      "description": "修改说明",
-      "originalText": "原文片段",
-      "rewrittenText": "改写后片段",
-      "reason": "改写原因"
-    }
-  ],
-  "suggestions": "进一步改进建议（如果有）"
-}
-
-只返回JSON格式，不要包含其他文字。`;
-}

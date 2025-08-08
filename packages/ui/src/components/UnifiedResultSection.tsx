@@ -17,11 +17,11 @@ interface UnifiedResultSectionProps {
   className?: string;
 }
 
-export function UnifiedResultSection({ 
-  title, 
-  items, 
-  sectionType, 
-  className = '' 
+export function UnifiedResultSection({
+  title,
+  items,
+  sectionType,
+  className = ''
 }: UnifiedResultSectionProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
@@ -75,36 +75,47 @@ export function UnifiedResultSection({
     return null;
   }
 
+	  // 区块整体折叠
+	  const [sectionExpanded, setSectionExpanded] = useState(true);
+
+
   return (
     <div className={`unified-result-section ${sectionType}-section ${className}`}>
-      <div className="section-header">
+      <div className="section-header" onClick={() => setSectionExpanded(!sectionExpanded)}>
         <span className="section-title">{title} ({items.length})</span>
+        <span className="spacer" />
+        <style>
+          {`.section-header{display:flex;align-items:center;gap:8px}.section-header .spacer{flex:1}`}
+        </style>
+        <span className="expand-icon" style={{ marginLeft: 'auto' }}>{sectionExpanded ? '▼' : '▶'}</span>
       </div>
-      
-      <div className="items-list">
-        {items.map(item => (
-          <div key={item.id} className={`result-item ${sectionType}-item ${item.severity || ''}`}>
-            <div
-              className="item-summary"
-              onClick={() => toggleExpanded(item.id)}
-            >
-              <span className="item-icon">
-                {item.severity ? getSeverityIcon(item.severity) : getTypeIcon(item.type)}
-              </span>
-              <span className="item-title">{item.title}</span>
-              <span className="expand-icon">
-                {expandedItems.has(item.id) ? '▼' : '▶'}
-              </span>
-            </div>
 
-            {expandedItems.has(item.id) && item.details && (
-              <div className="item-details">
-                {item.details}
+      {sectionExpanded && (
+        <div className="items-list">
+          {items.map(item => (
+            <div key={item.id} className={`result-item ${sectionType}-item ${item.severity || ''}`}>
+              <div
+                className="item-summary"
+                onClick={() => toggleExpanded(item.id)}
+              >
+                <span className="item-icon">
+                  {item.severity ? getSeverityIcon(item.severity) : getTypeIcon(item.type)}
+                </span>
+                <span className="item-title">{item.title}</span>
+                <span className="expand-icon">
+                  {expandedItems.has(item.id) ? '▼' : '▶'}
+                </span>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+
+              {expandedItems.has(item.id) && item.details && (
+                <div className="item-details">
+                  {item.details}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
