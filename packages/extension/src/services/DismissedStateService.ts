@@ -104,11 +104,4 @@ export class DismissedStateService {
     console.log(`DismissedStateService: Cleared ${keys.length} dismissed states`);
   }
 
-  /**
-   * 从原文和diffs计算原始文本（用于生成键）
-   */
-  extractOriginalFromDiffs(diffs: any[]): string {
-    if (!diffs || diffs.length === 0) return '';
-    return diffs.filter(d => d.type !== 'insert').map(d => d.value).join('');
-  }
 }

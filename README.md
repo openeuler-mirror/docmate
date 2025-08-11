@@ -1,139 +1,122 @@
-# DocMate - openEuler Writing Assistant
+# DocMate - openEuler 智能写作助手
 
-DocMate 是一个基于 AI 的 VS Code 扩展，专为 openEuler 文档编写而设计。它提供术语检查、文本润色和翻译功能，帮助提高文档质量和一致性。
+DocMate 是专为 openEuler 文档编写设计的 VS Code 智能写作助手。通过 AI 技术为技术文档创作提供全流程支持，帮助提升文档质量、统一写作规范，让文档编写更高效、更专业。
 
-## 功能特性
+## ✨ 主要功能
 
-- 🔍 **智能检查**：检查术语使用、语法错误和写作风格
-- ✨ **文本润色**：AI 驱动的文本改进建议
-- 🌐 **多语言翻译**：支持多种语言间的文档翻译
-- 📚 **术语库管理**：内置 openEuler 专业术语库
-- 🎯 **实时反馈**：即时显示检查结果和改进建议
+### 🔍 智能文档检查
 
-## 技术架构
+- **语法检查**：自动识别并纠正语法错误
+- **写作风格**：统一技术文档的表达风格
+- **内容一致性**：确保文档逻辑连贯、术语统一
 
-本项目采用现代化的技术栈：
+### ✨ AI 文本润色
 
-- **VS Code Extension API**：扩展核心框架
-- **React 19**：用户界面组件
-- **Vite 6**：前端构建工具
-- **TypeScript**：类型安全的开发体验
-- **Monorepo**：模块化的项目结构
+- **表达优化**：提升文档的清晰度和专业性
+- **结构调整**：优化段落结构和逻辑流程
+- **语言精炼**：让技术表达更加简洁明了
 
-### 项目结构
+### 🌐 多语言翻译
 
-```
-docmate/
-├── packages/
-│   ├── extension/          # VS Code 扩展主体
-│   ├── core/              # 核心业务逻辑
-│   ├── ui/                # React UI 组件
-│   └── shared/            # 共享类型和工具
-├── docs/                  # 项目文档
-└── .vscode/              # VS Code 配置
-```
+- **中英互译**：支持中文与英文之间的专业翻译
+- **术语保持**：保持技术术语的准确性和一致性
+- **上下文理解**：基于文档上下文提供精准翻译
 
-## 快速开始
+### ✏️ 智能重写
 
-### 环境要求
+- **内容改写**：根据需求重新组织和表达内容
+- **风格调整**：适应不同读者群体的表达方式
+- **质量提升**：全面改善文档的可读性和专业度
 
-- Node.js 18+
-- pnpm 8+
-- VS Code 1.85+
+## 🚀 快速开始
 
-### 安装依赖
+### 安装插件
 
-```bash
-pnpm install
-```
+1. 打开 VS Code
+2. 进入扩展商店 (Ctrl+Shift+X)
+3. 搜索 "DocMate"
+4. 点击安装
 
-### 开发模式
+### 基本使用
 
-```bash
-# 启动开发模式
-pnpm run dev
+1. **打开文档**：在 VS Code 中打开 Markdown 或文本文件
+2. **选择文本**：选中需要处理的文本内容
+3. **选择功能**：
+   - 右键菜单选择 DocMate 功能
+   - 使用侧边栏 DocMate 面板
+   - 命令面板 (Ctrl+Shift+P) 搜索 DocMate
 
-# 或者分别启动
-pnpm run dev:extension  # 扩展开发
-pnpm run dev:ui        # UI 开发
-```
+### 侧边栏面板
 
-### 构建项目
+点击活动栏的 DocMate 图标，打开专用侧边栏：
 
-```bash
-pnpm run build
-```
+- 查看处理结果和建议
+- 一键应用改进建议
+- 调整功能参数设置
 
-### 运行测试
+## ⚙️ 配置选项
 
-```bash
-pnpm run test
-```
+初次打开插件时会要求填写使用的模型、url、apikey等，后续可以在插件设置里更改
 
-## 使用方法
+## 💡 使用技巧
 
-1. **安装扩展**：在 VS Code 中安装 DocMate 扩展
-2. **配置 AI 服务**：在设置中配置 AI API 密钥和端点
-3. **选择文本**：在编辑器中选择要处理的文本
-4. **执行操作**：
-   - 右键菜单选择相应功能
-   - 或使用侧边栏的 DocMate 面板
-   - 或使用命令面板 (Ctrl+Shift+P)
+### 文档检查
 
-### 配置示例
+- 建议在文档完成初稿后进行全面检查
+- 可以分段检查长文档，确保处理效果
+- 关注检查结果中的术语和风格建议
 
-在 VS Code 设置中配置：
+### 文本润色
 
-```json
-{
-  "docmate.aiService.apiKey": "your-api-key",
-  "docmate.aiService.endpoint": "https://api.example.com/v1/chat/completions",
-  "docmate.terminology.autoCheck": true
-}
-```
+- 适合对已有内容进行质量提升
+- 可以针对特定段落进行精细润色
+- 建议保留原文备份，便于对比效果
 
-## 开发指南
+### 翻译功能
 
-### 添加新功能
+- 支持选中文本的快速翻译
+- 保持技术术语的专业性
+- 适合创建双语文档
 
-1. 在 `packages/shared/src/types.ts` 中定义类型
-2. 在 `packages/core/src/actions/` 中实现业务逻辑
-3. 在 `packages/extension/src/controllers/` 中添加控制器逻辑
-4. 在 `packages/ui/src/components/` 中创建 UI 组件
+## 🔮 后续开发计划
 
-### 代码规范
+我们正在积极开发更多功能，让 DocMate 成为更强大的写作助手：
 
-- 使用 TypeScript 进行类型安全开发
-- 遵循 ESLint 规则
-- 编写单元测试
-- 使用 Prettier 格式化代码
+### 即将推出
 
-### 调试
+- 📚 **术语库管理**：内置 openEuler 专业术语库，支持自定义术语
+- 📝 **文档模板**：提供标准化的文档模板和格式规范
+- 🎯 **实时检查**：输入时的实时语法和风格检查
+- 📊 **质量评分**：文档质量的量化评估和改进建议
 
-1. 按 F5 启动扩展开发主机
-2. 在新窗口中测试扩展功能
-3. 使用 VS Code 调试器设置断点
+### 长期规划
 
-## 贡献指南
+- 🤖 **智能补全**：基于上下文的内容智能补全
+- 🔗 **文档关联**：跨文档的内容一致性检查
+- 📈 **写作分析**：个人写作习惯分析和改进建议
+- 🌍 **多语言支持**：扩展更多语言的翻译和检查
 
-1. Fork 项目
-2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add some amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
+## 📞 反馈与支持
 
-## 许可证
+您的反馈对我们非常重要！
 
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+### 问题反馈
 
-## 支持
+- [提交 Issue](https://gitee.com/openeuler/docmate/issues)
 
-如有问题或建议，请：
+### 获取帮助
 
-1. 查看 [文档](docs/)
-2. 提交 [Issue](https://github.com/openeuler/docmate/issues)
-3. 参与 [讨论](https://github.com/openeuler/docmate/discussions)
+- 参与 [社区讨论](https://gitee.com/openeuler/docmate)
 
-## 致谢
+### 联系我们
 
-感谢 openEuler 社区的支持和贡献。
+- 项目仓库：https://gitee.com/openeuler/docmate
+- openEuler 社区：https://openeuler.org
+
+## 📄 许可证
+
+本项目采用木兰宽松许可证第 2 版。详见 [LICENSE](LICENSE) 文件。
+
+## 🙏 致谢
+
+感谢 openEuler 社区的支持，感谢所有贡献者的努力，让技术文档写作变得更加智能和高效。

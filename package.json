@@ -1,9 +1,18 @@
 {
   "name": "docmate",
   "displayName": "DocMate - openEuler Writing Assistant",
-  "description": "AI-powered writing assistant for openEuler documentation with terminology checking, polishing, and translation features",
-  "version": "0.1.0",
-  "publisher": "openeuler",
+  "description": "AI-powered intelligent writing assistant for openEuler documentation with checking, polishing, translation and rewriting features",
+  "version": "1.0.0",
+  "publisher": "DelthinYee",
+  "icon": "images/DocMate.png",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/openeuler/docmate.git"
+  },
+  "homepage": "https://gitee.com/openeuler/docmate",
+  "bugs": {
+    "url": "https://gitee.com/openeuler/docmate/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -18,14 +27,20 @@
     "writing",
     "ai",
     "assistant",
-    "terminology",
-    "translation"
+    "intelligent",
+    "checking",
+    "polishing",
+    "translation",
+    "rewriting",
+    "markdown",
+    "chinese",
+    "english"
   ],
   "activationEvents": [
     "onStartupFinished",
     "onUri"
   ],
-  "main": "./packages/extension/out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -73,6 +88,11 @@
         "category": "DocMate"
       },
       {
+        "command": "docmate.sidebar.focus",
+        "title": "Show DocMate Sidebar",
+        "category": "DocMate"
+      },
+      {
         "command": "docmate.logout",
         "title": "Logout",
         "category": "DocMate"
@@ -105,18 +125,15 @@
           "type": "string",
           "default": "http://localhost:8000",
           "description": "DocMate backend service URL"
-        },
-        "docmate.terminology.autoCheck": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically check terminology while typing"
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run build",
-    "build": "pnpm run build:extension && pnpm run build:ui",
+    "vscode:prepublish": "echo 'Skipping prepublish - build will be done by package script'",
+    "build": "pnpm run build:deps && pnpm run bundle",
+    "build:deps": "pnpm --filter shared build && pnpm --filter utils build && pnpm --filter ui build",
+    "bundle": "node esbuild.config.js",
     "build:extension": "pnpm --filter extension build",
     "build:ui": "pnpm --filter ui build",
     "dev": "pnpm run dev:extension & pnpm run dev:ui & pnpm run dev:backend",
@@ -128,12 +145,13 @@
     "watch": "pnpm run watch:extension & pnpm run watch:ui",
     "watch:extension": "pnpm --filter extension watch",
     "watch:ui": "pnpm --filter ui watch",
+    "watch:bundle": "node esbuild.config.js --watch",
     "test": "pnpm --filter extension test",
     "lint": "pnpm -r lint",
     "type-check": "pnpm -r type-check",
-    "clean": "pnpm -r clean",
-    "package": "vsce package",
-    "publish": "vsce publish"
+    "clean": "pnpm -r clean && rimraf dist *.vsix",
+    "package": "pnpm run build && vsce package --no-dependencies --baseContentUrl https://gitee.com/openeuler/docmate/raw/main/",
+    "publish": "pnpm run build && vsce publish --no-dependencies --baseContentUrl https://gitee.com/openeuler/docmate/raw/main/"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -141,7 +159,9 @@
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
     "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.25.8",
     "eslint": "^8.56.0",
+    "rimraf": "^5.0.5",
     "typescript": "^5.3.3"
   },
   "workspaces": [

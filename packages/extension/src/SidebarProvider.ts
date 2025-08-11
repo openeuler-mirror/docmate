@@ -275,11 +275,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   private _getHtmlForWebview(webview: vscode.Webview): string {
     // 获取UI包的资源路径
     const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'packages', 'ui', 'dist', 'index.js')
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'ui', 'index.js')
     );
 
     const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'packages', 'ui', 'dist', 'ui.css')
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'ui', 'ui.css')
     );
 
     // 使用nonce来确保只有我们的脚本可以运行
