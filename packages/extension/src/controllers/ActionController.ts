@@ -60,32 +60,80 @@ export class ActionController {
    * 初始化前端AI服务
    */
   private async initializeFrontendAIService(): Promise<void> {
-    // 首先尝试从用户配置服务获取配置
-    const userConfig = await userConfigService.getAIConfig();
+    // 获取完整配置（包含默认值）
+    const fullConfig = await userConfigService.getFullAIConfig();
 
     let aiConfig;
-    if (userConfig) {
-      // 使用用户配置
+    if (fullConfig && this.isValidUserConfig(fullConfig)) {
+      // 使用用户配置（已包含默认值）
       aiConfig = {
-        apiKey: userConfig.apiKey,
-        baseUrl: userConfig.baseUrl,
-        model: userConfig.model,
-        timeout: 30000,
-        maxRetries: 3
+        apiKey: fullConfig.apiKey,
+        baseUrl: fullConfig.baseUrl,
+        model: fullConfig.model,
+        timeout: fullConfig.timeout!,
+        maxRetries: fullConfig.maxRetries!
       };
+      console.log('ActionController: Using user config for AI service', {
+        timeout: aiConfig.timeout,
+        maxRetries: aiConfig.maxRetries
+      });
     } else {
-      // 回退到VS Code设置
+      // 回退到VS Code设置 + 默认配置
       const vsCodeConfig = this.getAIConfig();
+      const defaultConfig = userConfigService.getDefaultConfig();
       aiConfig = {
-        apiKey: vsCodeConfig.apiKey,
-        baseUrl: vsCodeConfig.endpoint,
-        model: vsCodeConfig.model || 'gpt-3.5-turbo',
-        timeout: vsCodeConfig.timeout || 30000,
-        maxRetries: vsCodeConfig.maxRetries || 3
+        apiKey: vsCodeConfig.apiKey || '',
+        baseUrl: vsCodeConfig.endpoint || '',
+        model: vsCodeConfig.model || defaultConfig.model,
+        timeout: vsCodeConfig.timeout || defaultConfig.timeout!,
+        maxRetries: vsCodeConfig.maxRetries || defaultConfig.maxRetries!
       };
+      console.log('ActionController: Using VS Code config for AI service', {
+        hasApiKey: !!aiConfig.apiKey,
+        hasBaseUrl: !!aiConfig.baseUrl,
+        model: aiConfig.model,
+        timeout: aiConfig.timeout,
+        maxRetries: aiConfig.maxRetries
+      });
     }
 
     this.frontendAIService = new FrontendAIService(aiConfig);
+  }
+
+  /**
+   * 验证用户配置是否有效
+   */
+  private isValidUserConfig(config: any): boolean {
+    return !!(
+      config &&
+      config.apiKey &&
+      config.apiKey.trim() &&
+      config.baseUrl &&
+      config.baseUrl.trim() &&
+      config.model &&
+      config.model.trim()
+    );
+  }
+
+  /**
+   * 确保AI服务已准备就绪
+   */
+  private async ensureAIServiceReady(): Promise<void> {
+    if (!this.frontendAIService) {
+      await this.initializeFrontendAIService();
+    }
+
+    if (!this.frontendAIService) {
+      throw createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
+    }
+
+    // 验证配置是否有效
+    if (!this.frontendAIService.isConfigValid()) {
+      throw createError(
+        ErrorCode.CONFIG_MISSING,
+        'AI service is not configured. Please configure API Key, Base URL, and Model in settings.'
+      );
+    }
   }
 
   /**
@@ -137,8 +185,12 @@ export class ActionController {
           console.log('ActionController: Executing auth command');
           result = await this.handleAuth(payload);
           break;
+        case 'cancel':
+          console.log('ActionController: Executing cancel command');
+          result = await this.handleCancel();
+          break;
         default:
-          throw createError('UNKNOWN_COMMAND', `Unknown command: ${command}`);
+          throw createError(ErrorCode.UNKNOWN_COMMAND, `Unknown command: ${command}`);
       }
 
       console.log('ActionController: Command', command, 'completed with result:', result);
@@ -154,7 +206,7 @@ export class ActionController {
    */
   private async ensureAuthenticated(): Promise<boolean> {
     if (!this.authService) {
-      throw createError('AUTH_NOT_INITIALIZED', 'Authentication service not initialized');
+      throw createError('AUTH_NOT_INITIALIZED' as any, 'Authentication service not initialized');
     }
 
     // 检查是否已认证
@@ -168,7 +220,7 @@ export class ActionController {
 
     // 需要登录，使用OAuthService
     if (!this.oauthService) {
-      throw createError('OAUTH_NOT_INITIALIZED', 'OAuth service not initialized');
+      throw createError('OAUTH_NOT_INITIALIZED' as any, 'OAuth service not initialized');
     }
 
     try {
@@ -176,7 +228,8 @@ export class ActionController {
       return this.authService.isAuthenticated();
     } catch (error) {
       console.error('ActionController: Login failed:', error);
-      return false;
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+      throw createError(docMateError.code as any, `Login failed: ${docMateError.message}`);
     }
   }
 
@@ -207,19 +260,11 @@ export class ActionController {
       throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for check operation');
     }
 
-    // 检查认证状态 - 暂时移除认证要求
-    // const isAuthenticated = await this.ensureAuthenticated();
-    // if (!isAuthenticated) {
-    //   throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
-    // }
-
-    // 使用前端AI服务
-    if (!this.frontendAIService) {
-      throw createError('FRONTEND_AI_SERVICE_NOT_INITIALIZED', 'Frontend AI service not initialized');
-    }
+    // 确保AI服务已准备就绪
+    await this.ensureAIServiceReady();
 
     // 使用前端AI服务，传递文本来源信息
-    const result = await this.frontendAIService.check(text, { ...options, textSource });
+    const result = await this.frontendAIService!.check(text, { ...options, textSource });
     return result;
   }
 
@@ -271,17 +316,15 @@ export class ActionController {
 
     // 统一文本处理逻辑
     let finalText = text;
-    let isFullDocument = fullDocument || textSource === 'full';
 
     // 如果没有传入文本，自动获取全文
     if (!text || !text.trim()) {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        throw createError('NO_ACTIVE_EDITOR', 'No active editor found');
+        throw createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
       }
       finalText = editor.document.getText();
       textSource = 'full';
-      isFullDocument = true;
     }
 
     // 兼容旧的fullDocument逻辑
@@ -289,18 +332,17 @@ export class ActionController {
       const editor = vscode.window.activeTextEditor;
       if (editor) {
         finalText = editor.document.getText();
-        isFullDocument = true;
       } else {
-        throw createError('NO_ACTIVE_EDITOR', 'No active editor found for full document translation');
+        throw createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found for full document translation');
       }
     }
 
     if (!finalText || typeof finalText !== 'string' || !finalText.trim()) {
-      throw createError('INVALID_TEXT', 'Text is required for translate operation');
+      throw createError(ErrorCode.INVALID_TEXT, 'Text is required for translate operation');
     }
 
     if (!options.targetLanguage) {
-      throw createError('MISSING_TARGET_LANGUAGE', 'Target language is required for translation');
+      throw createError('MISSING_TARGET_LANGUAGE' as any, 'Target language is required for translation');
     }
 
     // 检查认证状态 - 暂时移除认证要求
@@ -311,7 +353,7 @@ export class ActionController {
 
     // 使用前端AI服务
     if (!this.frontendAIService) {
-      throw createError('FRONTEND_AI_SERVICE_NOT_INITIALIZED', 'Frontend AI service not initialized');
+      throw createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
     }
 
     // 根据文本来源决定处理方式
@@ -437,7 +479,7 @@ export class ActionController {
   /**
    * 处理刷新命令
    */
-  private async handleRefresh(payload: any): Promise<{ status: string }> {
+  private async handleRefresh(_payload: any): Promise<{ status: string }> {
     // 重新加载配置
     this.updateConfiguration();
 
@@ -486,7 +528,8 @@ export class ActionController {
 
           return {
             action: 'saved',
-            success: true
+            success: true,
+            isAutoSave: payload.isAutoSave || false
           };
         } catch (error) {
           return {
@@ -499,12 +542,15 @@ export class ActionController {
       case 'test':
         // 测试连接
         try {
+          // 获取完整配置（包含默认值）
+          const fullConfig = await userConfigService.getFullAIConfig();
+
           // 创建临时的AI服务实例来测试连接
           const testService = new FrontendAIService({
             apiKey: config.apiKey,
             baseUrl: config.baseUrl,
             model: config.model,
-            timeout: 10000,
+            timeout: fullConfig.testTimeout!,
             maxRetries: 1
           });
 
@@ -517,10 +563,11 @@ export class ActionController {
             message: '连接测试成功！'
           };
         } catch (error) {
+          const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
           return {
             action: 'test',
             success: false,
-            error: error instanceof Error ? error.message : 'Connection test failed'
+            error: docMateError.message
           };
         }
 
@@ -537,7 +584,7 @@ export class ActionController {
         };
 
       default:
-        throw createError('INVALID_CONFIG_ACTION', `Unknown config action: ${action}`);
+        throw createError('INVALID_CONFIG_ACTION' as any, `Unknown config action: ${action}`);
     }
   }
 
@@ -546,7 +593,7 @@ export class ActionController {
    */
   private async handleAuth(payload: any): Promise<any> {
     if (!this.authService || !this.oauthService) {
-      throw createError('AUTH_NOT_INITIALIZED', 'Authentication service not initialized');
+      throw createError('AUTH_NOT_INITIALIZED' as any, 'Authentication service not initialized');
     }
 
     const { action, data } = payload;
@@ -580,7 +627,8 @@ export class ActionController {
             };
           }
         } catch (error) {
-          throw createError('AUTH_FAILED', `Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+          throw createError(docMateError.code as any, `Login failed: ${docMateError.message}`);
         }
 
       case 'logout':
@@ -591,7 +639,8 @@ export class ActionController {
             message: '已成功登出'
           };
         } catch (error) {
-          throw createError('LOGOUT_FAILED', `Logout failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          const docMateError = ErrorHandlingService.fromError(error, 'LOGOUT_FAILED' as any);
+          throw createError(docMateError.code as any, `Logout failed: ${docMateError.message}`);
         }
 
       case 'showStatus':
@@ -623,7 +672,7 @@ export class ActionController {
       case 'loginWithToken':
         // 兼容旧的token登录方式
         if (!data || !data.token) {
-          throw createError('INVALID_PAYLOAD', 'Token is required for login');
+          throw createError('INVALID_PAYLOAD' as any, 'Token is required for login');
         }
         try {
           const authResponse = await this.authService.loginWithSSOToken(data.token);
@@ -632,13 +681,14 @@ export class ActionController {
             userInfo: authResponse.user_info
           };
         } catch (error) {
-          throw createError('AUTH_FAILED', `Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+          throw createError(docMateError.code as any, `Login failed: ${docMateError.message}`);
         }
 
       case 'loginWithCredentials':
         // 新的双重认证登录方式
         if (!data || !data.sessionCookie) {
-          throw createError('INVALID_PAYLOAD', 'Session cookie is required for login');
+          throw createError('INVALID_PAYLOAD' as any, 'Session cookie is required for login');
         }
         try {
           const authResponse = await this.authService.loginWithSSOCredentials(
@@ -650,11 +700,12 @@ export class ActionController {
             userInfo: authResponse.user_info
           };
         } catch (error) {
-          throw createError('AUTH_FAILED', `Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+          throw createError(docMateError.code as any, `Login failed: ${docMateError.message}`);
         }
 
       default:
-        throw createError('UNKNOWN_AUTH_ACTION', `Unknown auth action: ${action}`);
+        throw createError('UNKNOWN_AUTH_ACTION' as any, `Unknown auth action: ${action}`);
     }
   }
 
@@ -685,7 +736,7 @@ export class ActionController {
       case 'validate':
         return this.validateSettings();
       default:
-        throw createError('UNKNOWN_SETTINGS_ACTION', `Unknown settings action: ${action}`);
+        throw createError('UNKNOWN_SETTINGS_ACTION' as any, `Unknown settings action: ${action}`);
     }
   }
 
@@ -748,7 +799,8 @@ export class ActionController {
 
       return { status: 'updated' };
     } catch (error) {
-      throw createError('SETTINGS_UPDATE_FAILED', 'Failed to update settings', { originalError: error });
+      const docMateError = ErrorHandlingService.fromError(error, 'SETTINGS_UPDATE_FAILED' as any);
+      throw createError(docMateError.code as any, 'Failed to update settings', { originalError: error });
     }
   }
 
@@ -786,10 +838,11 @@ export class ActionController {
 
     // 更新前端AI服务配置
     if (this.frontendAIService) {
+      const defaultConfig = userConfigService.getDefaultConfig();
       this.frontendAIService.updateConfig({
         apiKey: newConfig.apiKey,
         baseUrl: newConfig.endpoint,
-        model: newConfig.model || 'gpt-3.5-turbo',
+        model: newConfig.model || defaultConfig.model,
         timeout: newConfig.timeout,
         maxRetries: newConfig.maxRetries
       });
@@ -802,12 +855,15 @@ export class ActionController {
   private getAIConfig(): AIServiceConfig {
     const config = vscode.workspace.getConfiguration('docmate');
 
+    // 获取默认配置
+    const defaultConfig = userConfigService.getDefaultConfig();
+
     // 获取基础URL并确保正确的端点
     let endpoint = config.get('aiService.endpoint', '') || config.get('api.baseUrl', '');
     if (!endpoint) {
-      endpoint = 'https://api.openai.com/v1/chat/completions';
-    } else if (endpoint === 'https://api.openai.com/v1') {
-      endpoint = 'https://api.openai.com/v1/chat/completions';
+      endpoint = defaultConfig.baseUrl + '/chat/completions';
+    } else if (endpoint === defaultConfig.baseUrl) {
+      endpoint = defaultConfig.baseUrl + '/chat/completions';
     } else if (!endpoint.includes('/chat/completions')) {
       // 如果是自定义端点但没有包含/chat/completions，添加它
       endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
@@ -816,9 +872,37 @@ export class ActionController {
     return {
       apiKey: config.get('aiService.apiKey', ''),
       endpoint: endpoint,
-      model: config.get('api.modelName', 'gpt-3.5-turbo'),
-      timeout: 30000,
-      maxRetries: 3,
+      model: config.get('api.modelName', defaultConfig.model),
+      timeout: defaultConfig.timeout!,
+      maxRetries: defaultConfig.maxRetries!,
     };
+  }
+
+  /**
+   * 处理取消命令
+   */
+  private async handleCancel(): Promise<any> {
+    console.log('ActionController: Handling cancel command');
+
+    try {
+      // 取消前端AI服务的当前请求
+      if (this.frontendAIService) {
+        this.frontendAIService.cancelRequest();
+      }
+
+      return {
+        action: 'cancelled',
+        success: true,
+        message: '操作已取消'
+      };
+    } catch (error) {
+      console.error('ActionController: Cancel failed:', error);
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.UNKNOWN_ERROR);
+      return {
+        action: 'cancel',
+        success: false,
+        error: docMateError.message
+      };
+    }
   }
 }

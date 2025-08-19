@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   HostResult,
   ConversationItem,
@@ -29,6 +29,11 @@ interface AppState {
     code?: string;
     suggestion?: string;
   };
+  connectionStatus?: {
+    isConnected: boolean;
+    duration: number;
+    retryCount: number;
+  };
 }
 
 export default function App() {
@@ -47,6 +52,10 @@ export default function App() {
 
   // 添加错误边界
   const [hasError, setHasError] = useState(false);
+
+  // 重试计数器
+  const [retryCount, setRetryCount] = useState(0);
+  const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 处理认证状态变化
   const handleAuthChange = (isAuthenticated: boolean) => {
@@ -147,7 +156,8 @@ export default function App() {
       setState(prev => ({
         ...prev,
         isConfigured: true,
-        view: 'chat' // 配置保存后，切换回聊天视图
+        // 只有手动保存才切换视图，自动保存不切换
+        view: result.isAutoSave === false ? 'chat' : prev.view
       }));
     }
   };
@@ -168,6 +178,13 @@ export default function App() {
    */
   const handleRenderResult = (message: HostResult) => {
     const result = message.result as AIResult;
+
+    // 清理重试定时器
+    if (retryTimerRef.current) {
+      clearInterval(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    setRetryCount(0);
 
     if (result) {
       setState(prev => {
@@ -203,6 +220,14 @@ export default function App() {
    */
   const handleError = (message: HostResult) => {
     const payload = message.payload;
+
+    // 清理重试定时器
+    if (retryTimerRef.current) {
+      clearInterval(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    setRetryCount(0);
+
     setState(prev => ({
       ...prev,
       operationState: {
@@ -242,6 +267,28 @@ export default function App() {
    * 执行操作
    */
   const executeOperation = (operation: string, text: string, options?: any) => {
+    // 清理之前的定时器
+    if (retryTimerRef.current) {
+      clearInterval(retryTimerRef.current);
+    }
+
+    // 重置重试计数器
+    setRetryCount(0);
+
+    // 模拟重试状态更新
+    retryTimerRef.current = setInterval(() => {
+      setRetryCount(prev => {
+        if (prev < 2) { // 最多显示到重试2次
+          return prev + 1;
+        }
+        if (retryTimerRef.current) {
+          clearInterval(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
+        return prev;
+      });
+    }, 5000); // 每5秒增加一次重试计数
+
     // 添加用户输入到对话历史
     const userItem: ConversationItem = {
       id: generateId(),
@@ -294,6 +341,28 @@ export default function App() {
         } as any);
         break;
     }
+  };
+
+  /**
+   * 取消当前操作
+   */
+  const cancelOperation = () => {
+    // 发送取消命令到扩展
+    vscodeApi.postMessage({
+      command: 'cancel',
+      payload: {}
+    });
+
+    // 重置加载状态
+    setState(prev => ({
+      ...prev,
+      operationState: {
+        ...prev.operationState,
+        isLoading: false,
+        error: undefined,
+      },
+      connectionStatus: undefined
+    }));
   };
 
   /**
@@ -370,7 +439,12 @@ export default function App() {
           />
 
           {state.operationState.isLoading && (
-            <LoadingSpinner message={`正在${getOperationName(state.operationState.lastOperation)}...`} />
+            <LoadingSpinner
+              message={`正在${getOperationName(state.operationState.lastOperation)}...`}
+              showCancel={true}
+              onCancel={cancelOperation}
+              retryCount={retryCount}
+            />
           )}
 
           <InputPanel

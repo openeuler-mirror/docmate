@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { ErrorHandlingService } from './ErrorHandlingService';
+import { createError, ErrorCode } from '@docmate/shared';
 
 /**
  * 用户AI配置接口
@@ -7,6 +9,9 @@ export interface UserAIConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  timeout?: number;        // 超时时间（毫秒）
+  maxRetries?: number;     // 最大重试次数
+  testTimeout?: number;    // 测试连接超时时间（毫秒）
 }
 
 /**
@@ -39,7 +44,7 @@ export class UserConfigService {
    */
   public async getAIConfig(): Promise<UserAIConfig | null> {
     if (!this.context) {
-      throw new Error('UserConfigService not initialized');
+      throw createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'UserConfigService not initialized');
     }
 
     const config = await this.context.globalState.get<UserAIConfig>(this.CONFIG_KEY);
@@ -51,7 +56,7 @@ export class UserConfigService {
    */
   public async saveAIConfig(config: UserAIConfig): Promise<void> {
     if (!this.context) {
-      throw new Error('UserConfigService not initialized');
+      throw createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'UserConfigService not initialized');
     }
 
     // 验证配置
@@ -74,7 +79,7 @@ export class UserConfigService {
    */
   public async clearConfig(): Promise<void> {
     if (!this.context) {
-      throw new Error('UserConfigService not initialized');
+      throw createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'UserConfigService not initialized');
     }
 
     await this.context.globalState.update(this.CONFIG_KEY, undefined);
@@ -88,7 +93,10 @@ export class UserConfigService {
     return {
       baseUrl: 'https://api.openai.com/v1',
       apiKey: '',
-      model: 'gpt-3.5-turbo'
+      model: 'gpt-3.5-turbo',
+      timeout: 60000,        // 默认60秒超时
+      maxRetries: 3,         // 默认重试3次
+      testTimeout: 15000     // 默认测试连接15秒超时
     };
   }
 
@@ -97,32 +105,32 @@ export class UserConfigService {
    */
   private validateAIConfig(config: UserAIConfig): void {
     if (!config.baseUrl || typeof config.baseUrl !== 'string') {
-      throw new Error('Base URL is required and must be a string');
+      throw createError(ErrorCode.CONFIG_INVALID, 'Base URL is required and must be a string');
     }
 
     if (!config.apiKey || typeof config.apiKey !== 'string') {
-      throw new Error('API Key is required and must be a string');
+      throw createError(ErrorCode.CONFIG_INVALID, 'API Key is required and must be a string');
     }
 
     if (!config.model || typeof config.model !== 'string') {
-      throw new Error('Model is required and must be a string');
+      throw createError(ErrorCode.CONFIG_INVALID, 'Model is required and must be a string');
     }
 
     // 验证URL格式
     try {
       new URL(config.baseUrl);
     } catch {
-      throw new Error('Base URL must be a valid URL');
+      throw createError(ErrorCode.CONFIG_INVALID, 'Base URL must be a valid URL');
     }
 
     // 验证API Key不为空
     if (config.apiKey.trim().length === 0) {
-      throw new Error('API Key cannot be empty');
+      throw createError(ErrorCode.CONFIG_INVALID, 'API Key cannot be empty');
     }
 
     // 验证模型名称不为空
     if (config.model.trim().length === 0) {
-      throw new Error('Model name cannot be empty');
+      throw createError(ErrorCode.CONFIG_INVALID, 'Model name cannot be empty');
     }
   }
 
@@ -165,6 +173,17 @@ export class UserConfigService {
       hasApiKey: !!config.apiKey,
       hasModel: !!config.model,
       config: config
+    };
+  }
+
+  /**
+   * 获取完整配置（包含默认值）
+   */
+  public async getFullAIConfig(): Promise<UserAIConfig> {
+    const currentConfig = await this.getAIConfig();
+    return {
+      ...this.getDefaultConfig(),
+      ...currentConfig
     };
   }
 

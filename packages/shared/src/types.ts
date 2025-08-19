@@ -9,7 +9,7 @@ export type TextSource = 'selected' | 'full';
 
 // UI发往Host的命令接口
 export interface UICommand extends BaseCommand {
-  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings' | 'auth' | 'config';
+  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings' | 'auth' | 'config' | 'cancel';
   payload: {
     text?: string;
     textSource?: TextSource;
@@ -20,6 +20,7 @@ export interface UICommand extends BaseCommand {
     suggestion?: string;
     originalText?: string;
     config?: any; // 配置相关数据
+    isAutoSave?: boolean; // 是否为自动保存
   };
 }
 
@@ -146,6 +147,7 @@ export enum ErrorCode {
   // 认证相关
   AUTH_REQUIRED = 'AUTH_REQUIRED',
   AUTH_FAILED = 'AUTH_FAILED',
+  AUTH_EXPIRED = 'AUTH_EXPIRED',
   INVALID_API_KEY = 'INVALID_API_KEY',
 
   // 配置相关
@@ -175,6 +177,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.CONNECTION_TIMEOUT]: '连接超时，请检查网络或稍后重试',
   [ErrorCode.AUTH_REQUIRED]: '需要登录才能使用此功能',
   [ErrorCode.AUTH_FAILED]: '登录失败，请检查凭据',
+  [ErrorCode.AUTH_EXPIRED]: '登录已过期，请重新登录',
   [ErrorCode.INVALID_API_KEY]: 'API密钥无效，请在设置中更新',
   [ErrorCode.CONFIG_MISSING]: '请先在设置中配置AI服务',
   [ErrorCode.CONFIG_INVALID]: '配置信息有误，请检查设置',

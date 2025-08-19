@@ -27,29 +27,51 @@ export class ErrorHandlingService {
       return error as DocMateError;
     }
 
-    // 根据错误消息内容推断错误类型
+    // 根据错误类型和消息内容推断错误类型
     const errorMessage = error instanceof Error ? error.message : String(error);
     const lowerMessage = errorMessage.toLowerCase();
+    const errorName = error instanceof Error ? error.name : '';
 
     let code: ErrorCode = fallbackCode;
 
-    if (lowerMessage.includes('network') || lowerMessage.includes('fetch')) {
-      code = ErrorCode.NETWORK_ERROR;
-    } else if (lowerMessage.includes('timeout')) {
+    // 首先检查错误类型（通过 error.name）
+    if (errorName === 'AbortError') {
       code = ErrorCode.CONNECTION_TIMEOUT;
-    } else if (lowerMessage.includes('api key') || lowerMessage.includes('unauthorized')) {
+    } else if (errorName === 'TimeoutError') {
+      code = ErrorCode.CONNECTION_TIMEOUT;
+    } else if (errorName === 'TypeError' && lowerMessage.includes('fetch')) {
+      code = ErrorCode.NETWORK_ERROR;
+    } else if (errorName === 'SyntaxError' && lowerMessage.includes('json')) {
+      code = ErrorCode.JSON_PARSE_ERROR;
+    }
+    // 然后检查错误消息内容
+    else if (lowerMessage.includes('network') || lowerMessage.includes('fetch failed')) {
+      code = ErrorCode.NETWORK_ERROR;
+    } else if (lowerMessage.includes('timeout') || lowerMessage.includes('timed out')) {
+      code = ErrorCode.CONNECTION_TIMEOUT;
+    } else if (lowerMessage.includes('api key') || lowerMessage.includes('unauthorized') || lowerMessage.includes('401')) {
       code = ErrorCode.INVALID_API_KEY;
     } else if (lowerMessage.includes('json') || lowerMessage.includes('parse')) {
       code = ErrorCode.JSON_PARSE_ERROR;
-    } else if (lowerMessage.includes('config')) {
+    } else if (lowerMessage.includes('config') && (lowerMessage.includes('missing') || lowerMessage.includes('invalid'))) {
       code = ErrorCode.CONFIG_INVALID;
     } else if (lowerMessage.includes('text') && lowerMessage.includes('not found')) {
       code = ErrorCode.ORIGINAL_TEXT_NOT_FOUND;
-    } else if (lowerMessage.includes('editor')) {
+    } else if (lowerMessage.includes('editor') || lowerMessage.includes('no active')) {
       code = ErrorCode.NO_ACTIVE_EDITOR;
+    } else if (lowerMessage.includes('cors') || lowerMessage.includes('cross-origin')) {
+      code = ErrorCode.NETWORK_ERROR;
+    } else if (lowerMessage.includes('dns') || lowerMessage.includes('name resolution')) {
+      code = ErrorCode.NETWORK_ERROR;
+    } else if (lowerMessage.includes('certificate') || lowerMessage.includes('ssl') || lowerMessage.includes('tls')) {
+      code = ErrorCode.NETWORK_ERROR;
+    } else if (lowerMessage.includes('quota') || lowerMessage.includes('rate limit') || lowerMessage.includes('429')) {
+      code = ErrorCode.AI_SERVICE_ERROR;
+    } else if (lowerMessage.includes('model') && (lowerMessage.includes('not found') || lowerMessage.includes('unavailable'))) {
+      code = ErrorCode.AI_SERVICE_ERROR;
     }
 
-    return this.createError(code, undefined, { originalError: errorMessage });
+    return this.createError(code, undefined, { originalError: errorMessage, errorName });
   }
 
   /**

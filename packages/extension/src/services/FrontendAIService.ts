@@ -12,6 +12,7 @@ import {
   buildRewritePrompt
 } from '../prompts';
 import { TerminologyService } from '@docmate/utils';
+import { ErrorHandlingService } from './ErrorHandlingService';
 
 /**
  * 前端AI服务配置接口
@@ -20,8 +21,20 @@ export interface FrontendAIConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
-  timeout?: number;
-  maxRetries?: number;
+  timeout: number;
+  maxRetries: number;
+  enableStreaming?: boolean;
+}
+
+/**
+ * 流式响应回调接口
+ */
+export interface StreamingCallbacks {
+  onStart?: () => void;
+  onChunk?: (chunk: string) => void;
+  onComplete?: (fullResponse: string) => void;
+  onError?: (error: Error) => void;
+  onRetry?: (attempt: number, maxRetries: number) => void;
 }
 
 /**
@@ -31,11 +44,11 @@ export interface FrontendAIConfig {
 export class FrontendAIService {
   private config: FrontendAIConfig;
   private terminologyService: TerminologyService;
+  private abortController: AbortController | null = null;
 
   constructor(config: FrontendAIConfig) {
     this.config = {
-      timeout: 30000,
-      maxRetries: 3,
+      enableStreaming: true,
       ...config
     };
     this.terminologyService = new TerminologyService();
@@ -75,7 +88,8 @@ export class FrontendAIService {
       return this.parseAIResponse(aiResponse, 'check', text);
     } catch (error) {
       console.error('FrontendAIService: Check failed:', error);
-      throw createError('AI_SERVICE_ERROR', `Text check failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
+      throw createError(docMateError.code as any, `Text check failed: ${docMateError.message}`);
     }
   }
 
@@ -95,7 +109,8 @@ export class FrontendAIService {
       return this.parseAIResponse(aiResponse, 'polish', text);
     } catch (error) {
       console.error('FrontendAIService: Polish failed:', error);
-      throw createError('AI_SERVICE_ERROR', `Text polish failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
+      throw createError(docMateError.code as any, `Text polish failed: ${docMateError.message}`);
     }
   }
 
@@ -125,7 +140,8 @@ export class FrontendAIService {
       return result;
     } catch (error) {
       console.error('FrontendAIService: Translate failed:', error);
-      throw createError('AI_SERVICE_ERROR', `Text translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
+      throw createError(docMateError.code as any, `Text translation failed: ${docMateError.message}`);
     }
   }
 
@@ -140,7 +156,8 @@ export class FrontendAIService {
       return this.parseAIResponse(aiResponse, 'rewrite', text);
     } catch (error) {
       console.error('FrontendAIService: Rewrite failed:', error);
-      throw createError('AI_SERVICE_ERROR', `Text rewrite failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
+      throw createError(docMateError.code as any, `Text rewrite failed: ${docMateError.message}`);
     }
   }
 
@@ -158,8 +175,22 @@ export class FrontendAIService {
     } = {}
   ): Promise<any> {
     // 验证配置
-    if (!this.config.apiKey || !this.config.baseUrl || !this.config.model) {
-      throw createError('INVALID_CONFIG', 'AI service configuration is incomplete');
+    const missingFields = [];
+    if (!this.config.apiKey || this.config.apiKey.trim() === '') {
+      missingFields.push('API Key');
+    }
+    if (!this.config.baseUrl || this.config.baseUrl.trim() === '') {
+      missingFields.push('Base URL');
+    }
+    if (!this.config.model || this.config.model.trim() === '') {
+      missingFields.push('Model');
+    }
+
+    if (missingFields.length > 0) {
+      throw createError(
+        'CONFIG_MISSING' as any,
+        `AI service configuration is incomplete. Missing: ${missingFields.join(', ')}. Please configure in settings.`
+      );
     }
 
     // 构建消息列表
@@ -201,9 +232,17 @@ export class FrontendAIService {
     }
 
     // 重试机制
-    for (let attempt = 0; attempt < (this.config.maxRetries || 3); attempt++) {
+    for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       try {
         console.log(`FrontendAIService: Attempting AI call (${attempt + 1}/${this.config.maxRetries})`);
+
+        // 创建AbortController用于动态超时控制
+        this.abortController = new AbortController();
+
+        // 设置初始超时
+        const initialTimeout = setTimeout(() => {
+          this.abortController?.abort();
+        }, this.config.timeout!);
 
         const response = await fetch(endpoint, {
           method: 'POST',
@@ -212,8 +251,11 @@ export class FrontendAIService {
             'Authorization': `Bearer ${this.config.apiKey}`,
           },
           body: JSON.stringify(requestBody),
-          signal: AbortSignal.timeout(this.config.timeout || 30000)
+          signal: this.abortController.signal
         });
+
+        // 收到响应后清除初始超时
+        clearTimeout(initialTimeout);
 
         if (response.ok) {
           const data = await response.json() as any;
@@ -258,7 +300,10 @@ export class FrontendAIService {
           });
 
           if (attempt === (this.config.maxRetries || 3) - 1) {
-            throw new Error(`AI service error: ${response.status} - ${errorText}`);
+            throw createError(
+              'AI_SERVICE_ERROR',
+              `AI service error: ${response.status} - ${errorText}`
+            );
           }
         }
       } catch (error) {
@@ -267,15 +312,20 @@ export class FrontendAIService {
           attempt: attempt + 1
         });
 
-        if (attempt === (this.config.maxRetries || 3) - 1) {
+        if (attempt === this.config.maxRetries - 1) {
+          // 使用 ErrorHandlingService 来正确识别和转换错误
+          const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
           throw createError(
-            'AI_SERVICE_ERROR',
-            `AI service call failed after ${this.config.maxRetries} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`
+            docMateError.code as any,
+            `AI service call failed after ${this.config.maxRetries} attempts: ${docMateError.message}`
           );
         }
 
         // 等待一段时间后重试
         await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+      } finally {
+        // 清理连接状态
+        this.abortController = null;
       }
     }
 
@@ -294,6 +344,176 @@ export class FrontendAIService {
    */
   getConfig(): FrontendAIConfig {
     return { ...this.config };
+  }
+
+  /**
+   * 取消当前请求
+   */
+  cancelRequest(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+  }
+
+
+
+  /**
+   * 流式调用AI服务
+   */
+  async callAIServiceStreaming(
+    prompt: string,
+    conversationHistory: ChatMessage[] = [],
+    callbacks: StreamingCallbacks = {},
+    options: {
+      tools?: any[];
+      toolChoice?: any;
+      responseFormat?: any;
+      temperature?: number;
+    } = {}
+  ): Promise<string> {
+    // 验证配置
+    const missingFields = [];
+    if (!this.config.apiKey || this.config.apiKey.trim() === '') {
+      missingFields.push('API Key');
+    }
+    if (!this.config.baseUrl || this.config.baseUrl.trim() === '') {
+      missingFields.push('Base URL');
+    }
+    if (!this.config.model || this.config.model.trim() === '') {
+      missingFields.push('Model');
+    }
+
+    if (missingFields.length > 0) {
+      throw createError(
+        'CONFIG_MISSING' as any,
+        `AI service configuration is incomplete. Missing: ${missingFields.join(', ')}. Please configure in settings.`
+      );
+    }
+
+    // 创建新的AbortController
+    this.abortController = new AbortController();
+
+    try {
+      callbacks.onStart?.();
+
+      const response = await this.makeStreamingRequest(
+        prompt,
+        conversationHistory,
+        options,
+        callbacks
+      );
+
+      callbacks.onComplete?.(response);
+      return response;
+    } catch (error) {
+      callbacks.onError?.(error as Error);
+      throw error;
+    } finally {
+      this.abortController = null;
+    }
+  }
+
+  /**
+   * 执行流式请求
+   */
+  private async makeStreamingRequest(
+    prompt: string,
+    conversationHistory: ChatMessage[],
+    options: any,
+    callbacks: StreamingCallbacks
+  ): Promise<string> {
+    const messages = [
+      ...conversationHistory.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      })),
+      { role: 'user', content: prompt }
+    ];
+
+    const requestBody = {
+      model: this.config.model,
+      messages,
+      stream: this.config.enableStreaming,
+      temperature: options.temperature || 0.7,
+      ...(options.tools && { tools: options.tools }),
+      ...(options.toolChoice && { tool_choice: options.toolChoice }),
+      ...(options.responseFormat && { response_format: options.responseFormat })
+    };
+
+    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.config.apiKey}`
+      },
+      body: JSON.stringify(requestBody),
+      signal: this.abortController?.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    if (!this.config.enableStreaming || !response.body) {
+      // 非流式响应
+      const data: any = await response.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      callbacks.onChunk?.(content);
+      return content;
+    }
+
+    // 流式响应处理
+    return this.processStreamingResponse(response, callbacks);
+  }
+
+  /**
+   * 处理流式响应
+   */
+  private async processStreamingResponse(
+    response: Response,
+    callbacks: StreamingCallbacks
+  ): Promise<string> {
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let fullResponse = '';
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content;
+
+              if (content) {
+                fullResponse += content;
+                callbacks.onChunk?.(content);
+              }
+            } catch (e) {
+              console.warn('Failed to parse SSE data:', data);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return fullResponse;
   }
 
   /**

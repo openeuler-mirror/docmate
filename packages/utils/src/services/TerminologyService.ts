@@ -1,4 +1,4 @@
-import { TerminologyDatabase, TerminologyEntry, createError } from '@docmate/shared';
+import { TerminologyDatabase, TerminologyEntry, createError, ErrorCode } from '@docmate/shared';
 
 export class TerminologyService {
   private database: TerminologyDatabase | null = null;
@@ -285,7 +285,7 @@ export class TerminologyService {
       this.buildIndex();
     } catch (error) {
       throw createError(
-        'TERMINOLOGY_UPDATE_FAILED',
+        'TERMINOLOGY_UPDATE_FAILED' as any,
         'Failed to update terminology database',
         { originalError: error }
       );
@@ -297,7 +297,7 @@ export class TerminologyService {
    */
   addTerm(entry: Omit<TerminologyEntry, 'id'>): TerminologyEntry {
     if (!this.database) {
-      throw createError('TERMINOLOGY_NOT_LOADED', 'Terminology database not loaded');
+      throw createError('TERMINOLOGY_NOT_LOADED' as any, 'Terminology database not loaded');
     }
 
     const newEntry: TerminologyEntry = {
