@@ -1515,30 +1515,6 @@ body {
   color: var(--vscode-editorWarning-foreground);
 }
 
-.config-help {
-  background: var(--vscode-textBlockQuote-background);
-  border-left: 4px solid var(--vscode-textBlockQuote-border);
-  padding: 16px;
-  border-radius: 4px;
-}
-
-.config-help h3 {
-  color: var(--vscode-foreground);
-  margin-bottom: 12px;
-  font-size: 16px;
-}
-
-.config-help ul {
-  margin: 0;
-  padding-left: 20px;
-  color: var(--vscode-descriptionForeground);
-}
-
-.config-help li {
-  margin-bottom: 8px;
-  font-size: 14px;
-}
-
 /* 改进的diff显示样式 - 移除内部边框 */
 .diff-section {
   margin-bottom: 16px;

@@ -5,18 +5,16 @@ interface LoadingSpinnerProps {
   message?: string;
   showCancel?: boolean;
   onCancel?: () => void;
-  showConnectionStatus?: boolean;
-  connectionDuration?: number;
   retryCount?: number;
+  maxRetries?: number;
 }
 
 export function LoadingSpinner({
   message = '处理中...',
   showCancel = false,
   onCancel,
-  showConnectionStatus = false,
-  connectionDuration = 0,
-  retryCount = 0
+  retryCount = 0,
+  maxRetries = 3
 }: LoadingSpinnerProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
 
@@ -44,14 +42,9 @@ export function LoadingSpinner({
     // 添加运行时间
     parts.push(`运行时间: ${formatDuration(elapsedTime)}`);
 
-    // 添加连接状态信息
-    if (showConnectionStatus && connectionDuration > 0) {
-      parts.push(`连接: ${formatDuration(Math.floor(connectionDuration / 1000))}`);
-    }
-
     // 添加重试信息
     if (retryCount > 0) {
-      parts.push(`重试: ${retryCount}/3`);
+      parts.push(`重试: ${retryCount}/${maxRetries}`);
     }
 
     return parts.join(' • ');

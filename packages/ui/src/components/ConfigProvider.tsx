@@ -474,16 +474,6 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
           </button>
         </div>
       </div>
-
-      <div className="config-help">
-        <h3>💡 配置说明</h3>
-        <ul>
-          <li>支持OpenAI官方API和兼容的第三方服务</li>
-          <li>配置信息将安全存储在本地，不会上传到云端</li>
-          <li>建议先使用"测试连接"验证配置是否正确</li>
-          <li>配置完成后即可使用所有AI功能</li>
-        </ul>
-      </div>
     </div>
   );
 }

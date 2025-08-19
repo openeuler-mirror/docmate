@@ -29,10 +29,9 @@ interface AppState {
     code?: string;
     suggestion?: string;
   };
-  connectionStatus?: {
-    isConnected: boolean;
-    duration: number;
-    retryCount: number;
+  userConfig?: {
+    maxRetries: number;
+    timeout: number;
   };
 }
 
@@ -53,8 +52,9 @@ export default function App() {
   // 添加错误边界
   const [hasError, setHasError] = useState(false);
 
-  // 重试计数器
+  // 重试计数器和配置
   const [retryCount, setRetryCount] = useState(0);
+  const [userConfig, setUserConfig] = useState({ maxRetries: 3, timeout: 60000 });
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 处理认证状态变化
@@ -151,6 +151,14 @@ export default function App() {
         isConfigured: result.isConfigured || false,
         isCheckingConfig: false
       }));
+
+      // 获取用户配置
+      if (result.isConfigured) {
+        vscodeApi.postMessage({
+          command: 'config',
+          payload: { action: 'get' }
+        });
+      }
     } else if (result && result.action === 'saved') {
       console.log('App: Processing config saved:', result);
       setState(prev => ({
@@ -159,6 +167,23 @@ export default function App() {
         // 只有手动保存才切换视图，自动保存不切换
         view: result.isAutoSave === false ? 'chat' : prev.view
       }));
+
+      // 获取最新配置
+      vscodeApi.postMessage({
+        command: 'config',
+        payload: { action: 'get' }
+      });
+    } else if (result && result.action === 'get' && result.config) {
+      // 处理获取到的配置
+      const config = result.config;
+      setUserConfig({
+        maxRetries: config.maxRetries || 3,
+        timeout: config.timeout || 60000
+      });
+      console.log('App: Updated user config:', {
+        maxRetries: config.maxRetries || 3,
+        timeout: config.timeout || 60000
+      });
     }
   };
 
@@ -275,10 +300,13 @@ export default function App() {
     // 重置重试计数器
     setRetryCount(0);
 
+    // 根据用户配置计算重试间隔（基于timeout配置）
+    const retryInterval = userConfig.timeout;
+
     // 模拟重试状态更新
     retryTimerRef.current = setInterval(() => {
       setRetryCount(prev => {
-        if (prev < 2) { // 最多显示到重试2次
+        if (prev < userConfig.maxRetries - 1) { // 根据用户配置的最大重试次数
           return prev + 1;
         }
         if (retryTimerRef.current) {
@@ -287,7 +315,7 @@ export default function App() {
         }
         return prev;
       });
-    }, 5000); // 每5秒增加一次重试计数
+    }, retryInterval);
 
     // 添加用户输入到对话历史
     const userItem: ConversationItem = {
@@ -360,8 +388,7 @@ export default function App() {
         ...prev.operationState,
         isLoading: false,
         error: undefined,
-      },
-      connectionStatus: undefined
+      }
     }));
   };
 
@@ -444,6 +471,7 @@ export default function App() {
               showCancel={true}
               onCancel={cancelOperation}
               retryCount={retryCount}
+              maxRetries={userConfig.maxRetries}
             />
           )}
 
