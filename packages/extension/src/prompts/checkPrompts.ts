@@ -19,13 +19,15 @@ export function buildCheckPrompt(text: string, checkTypes: string[], strictMode:
 2. 技术术语的一致性
 3. 专业术语的准确性
 
-【文档内容】
-${text}
-
 重要：你必须仅通过调用函数 return_check_result 返回结构化结果；不得输出任何其他文本、思考、解释或Markdown代码块。
 请确保 correctedText 必须存在；issues 必须存在（即使无问题也需给出[]）。
 其中每个 issue：
 - message：作为“简短标题”（≤12汉字或24字符），例如“缺少主语”
 - suggestion：详细说明与建议（必须提供，允许多行）
-- 需包含 type/severity/start/end 等字段。`;
+- 需包含 type/severity/start/end 等字段。
+
+【文档内容】
+${text}
+`
+;
 }

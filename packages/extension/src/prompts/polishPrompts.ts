@@ -39,14 +39,15 @@ export function buildPolishPrompt(
   return `你是 openEuler 文档团队的写作与审校助手，遵循 openEuler 的术语与风格规范，保持专业、准确、简洁。
 请对以下文档进行润色，重点${focusDescription}，目标读者是${audienceDescription}。
 
-【原文】
-${text}
-
 重要：你必须仅通过调用函数 return_polish_result 返回结构化结果；不得输出任何其它文本、思考、解释或Markdown代码块。
 请确保以下字段：
 - polishedText（完整润色结果，必填）
 - changes（数组，列出每条润色项，必须包含 type/description，详细原因写在 reason；description 需作为“简短标题”，不超过12个汉字或24个字符，避免标点结尾）
 - summary（一句话总结）
 - explanation（详细说明）
-以上字段应尽量出现；若无 changes 也需给出 summary/explanation。`;
+以上字段应尽量出现；若无 changes 也需给出 summary/explanation。
+
+【原文】
+${text}
+`;
 }

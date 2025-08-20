@@ -48,12 +48,13 @@ export function buildTranslatePrompt(
 5. 确保翻译的连贯性和流畅性
 6. 特别注意openEuler相关术语的正确使用
 
-【原文】
-${text}
-
 重要：你必须仅通过调用函数 return_translate_result 返回结构化结果；不得输出任何其它文本、思考、解释或Markdown代码块。
 请确保以下字段必须出现：
 - translatedText（完整翻译文本）
 - sourceLanguage/targetLanguage
-- terminology（数组，列出主要术语对照，如无术语请返回空数组而不是省略字段）。`;
+- terminology（数组，列出主要术语对照，如无术语请返回空数组而不是省略字段）。
+
+【原文】
+${text}
+`;
 }
