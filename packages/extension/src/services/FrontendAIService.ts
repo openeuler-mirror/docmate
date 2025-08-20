@@ -3,7 +3,8 @@ import {
   ChatMessage,
   createError,
   Diff,
-  Issue
+  Issue,
+  ErrorCode
 } from '@docmate/shared';
 import {
   buildCheckPrompt,
@@ -87,9 +88,13 @@ export class FrontendAIService {
       // 如果返回为 {tool,args}，直接传递即可；parse 支持对象
       return this.parseAIResponse(aiResponse, 'check', text);
     } catch (error) {
-      console.error('FrontendAIService: Check failed:', error);
-      const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
-      throw createError(docMateError.code as any, `Text check failed: ${docMateError.message}`);
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
+      ErrorHandlingService.logError(docMateError, 'FrontendAIService.checkText');
+      throw ErrorHandlingService.createContextualError(
+        docMateError.code as ErrorCode,
+        `Text check failed: ${docMateError.message}`,
+        'FrontendAIService.checkText'
+      );
     }
   }
 
@@ -108,9 +113,13 @@ export class FrontendAIService {
       const aiResponse = await this.callAIService(prompt, [], this.getPolishToolOptions());
       return this.parseAIResponse(aiResponse, 'polish', text);
     } catch (error) {
-      console.error('FrontendAIService: Polish failed:', error);
-      const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
-      throw createError(docMateError.code as any, `Text polish failed: ${docMateError.message}`);
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
+      ErrorHandlingService.logError(docMateError, 'FrontendAIService.polish');
+      throw ErrorHandlingService.createContextualError(
+        docMateError.code as ErrorCode,
+        `Text polish failed: ${docMateError.message}`,
+        'FrontendAIService.polish'
+      );
     }
   }
 
@@ -139,9 +148,13 @@ export class FrontendAIService {
       }
       return result;
     } catch (error) {
-      console.error('FrontendAIService: Translate failed:', error);
-      const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
-      throw createError(docMateError.code as any, `Text translation failed: ${docMateError.message}`);
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
+      ErrorHandlingService.logError(docMateError, 'FrontendAIService.translate');
+      throw ErrorHandlingService.createContextualError(
+        docMateError.code as ErrorCode,
+        `Text translation failed: ${docMateError.message}`,
+        'FrontendAIService.translate'
+      );
     }
   }
 
@@ -155,9 +168,13 @@ export class FrontendAIService {
       const aiResponse = await this.callAIService(prompt, conversationHistory, this.getRewriteToolOptions());
       return this.parseAIResponse(aiResponse, 'rewrite', text);
     } catch (error) {
-      console.error('FrontendAIService: Rewrite failed:', error);
-      const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
-      throw createError(docMateError.code as any, `Text rewrite failed: ${docMateError.message}`);
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
+      ErrorHandlingService.logError(docMateError, 'FrontendAIService.rewrite');
+      throw ErrorHandlingService.createContextualError(
+        docMateError.code as ErrorCode,
+        `Text rewrite failed: ${docMateError.message}`,
+        'FrontendAIService.rewrite'
+      );
     }
   }
 
@@ -187,8 +204,8 @@ export class FrontendAIService {
     }
 
     if (missingFields.length > 0) {
-      throw createError(
-        'CONFIG_MISSING' as any,
+      throw ErrorHandlingService.createError(
+        ErrorCode.CONFIG_MISSING,
         `AI service configuration is incomplete. Missing: ${missingFields.join(', ')}. Please configure in settings.`
       );
     }
@@ -268,7 +285,7 @@ export class FrontendAIService {
               const args = JSON.parse(argsStr);
               return { tool: first.function?.name, args };
             } catch (e) {
-              throw new Error('Tool calling arguments JSON 解析失败');
+              throw ErrorHandlingService.createError(ErrorCode.TOOL_CALL_PARSE_ERROR, 'Tool calling arguments JSON 解析失败');
             }
           }
 
@@ -276,11 +293,12 @@ export class FrontendAIService {
 
           // 如果没有content但有tool calls，说明AI使用了工具调用
           if (!content && (!toolCalls || toolCalls.length === 0)) {
-            console.error('FrontendAIService: No content or tool calls in response', {
-              choice,
-              data
-            });
-            throw new Error('Invalid response format from AI service: no content or tool calls');
+            const error = ErrorHandlingService.createError(
+              ErrorCode.RESPONSE_FORMAT_ERROR,
+              'Invalid response format from AI service: no content or tool calls'
+            );
+            ErrorHandlingService.logError(error, 'FrontendAIService.callAIService - Invalid Response');
+            throw error;
           }
 
           console.log('FrontendAIService: AI call successful', {
@@ -292,33 +310,28 @@ export class FrontendAIService {
           return content || '';
         } else {
           const errorText = await response.text();
-          console.warn('FrontendAIService: AI service returned error', {
-            status: response.status,
-            statusText: response.statusText,
-            response: errorText,
-            attempt: attempt + 1
-          });
+          const error = ErrorHandlingService.createError(
+            ErrorCode.AI_SERVICE_ERROR,
+            `AI service error: ${response.status} - ${errorText}`
+          );
+          ErrorHandlingService.logError(error, `FrontendAIService.callAIService - Attempt ${attempt + 1}`);
 
-          if (attempt === (this.config.maxRetries || 3) - 1) {
-            throw createError(
-              'AI_SERVICE_ERROR',
-              `AI service error: ${response.status} - ${errorText}`
-            );
+          if (attempt === this.config.maxRetries - 1) {
+            throw error;
           }
         }
       } catch (error) {
-        console.warn('FrontendAIService: Request failed', {
-          error: error instanceof Error ? error.message : 'Unknown error',
-          attempt: attempt + 1
-        });
+        const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
+        ErrorHandlingService.logError(docMateError, `FrontendAIService.callAIService - Attempt ${attempt + 1}`);
 
         if (attempt === this.config.maxRetries - 1) {
-          // 使用 ErrorHandlingService 来正确识别和转换错误
-          const docMateError = ErrorHandlingService.fromError(error, 'AI_SERVICE_ERROR' as any);
-          throw createError(
-            docMateError.code as any,
-            `AI service call failed after ${this.config.maxRetries} attempts: ${docMateError.message}`
+          // 最后一次重试失败，保留原始错误码，只添加重试信息
+          const finalError = ErrorHandlingService.createContextualError(
+            docMateError.code as ErrorCode,
+            `${ErrorHandlingService.getFriendlyMessage(docMateError)} (重试${this.config.maxRetries}次后失败)`,
+            'FrontendAIService.callAIService'
           );
+          throw finalError;
         }
 
         // 等待一段时间后重试
@@ -329,7 +342,7 @@ export class FrontendAIService {
       }
     }
 
-    throw createError('AI_SERVICE_ERROR', 'AI service call failed');
+    throw ErrorHandlingService.createError(ErrorCode.AI_SERVICE_ERROR, 'AI service call failed');
   }
 
   /**
@@ -452,7 +465,7 @@ export class FrontendAIService {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      throw ErrorHandlingService.createError(ErrorCode.AI_SERVICE_ERROR, `HTTP ${response.status}: ${response.statusText}`);
     }
 
     if (!this.config.enableStreaming || !response.body) {

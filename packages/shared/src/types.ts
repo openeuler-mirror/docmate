@@ -143,16 +143,20 @@ export enum ErrorCode {
   NETWORK_ERROR = 'NETWORK_ERROR',
   AI_SERVICE_ERROR = 'AI_SERVICE_ERROR',
   CONNECTION_TIMEOUT = 'CONNECTION_TIMEOUT',
+  REQUEST_TIMEOUT = 'REQUEST_TIMEOUT',
+  BACKEND_REQUEST_FAILED = 'BACKEND_REQUEST_FAILED',
 
   // 认证相关
   AUTH_REQUIRED = 'AUTH_REQUIRED',
   AUTH_FAILED = 'AUTH_FAILED',
   AUTH_EXPIRED = 'AUTH_EXPIRED',
   INVALID_API_KEY = 'INVALID_API_KEY',
+  AUTH_CANCELLED = 'AUTH_CANCELLED',
 
   // 配置相关
   CONFIG_MISSING = 'CONFIG_MISSING',
   CONFIG_INVALID = 'CONFIG_INVALID',
+  LOGIN_URL_FAILED = 'LOGIN_URL_FAILED',
 
   // 文本处理相关
   INVALID_TEXT = 'INVALID_TEXT',
@@ -163,10 +167,12 @@ export enum ErrorCode {
   // 解析相关
   JSON_PARSE_ERROR = 'JSON_PARSE_ERROR',
   RESPONSE_FORMAT_ERROR = 'RESPONSE_FORMAT_ERROR',
+  TOOL_CALL_PARSE_ERROR = 'TOOL_CALL_PARSE_ERROR',
 
   // 系统相关
   UNKNOWN_COMMAND = 'UNKNOWN_COMMAND',
   SERVICE_NOT_INITIALIZED = 'SERVICE_NOT_INITIALIZED',
+  OPERATION_CANCELLED = 'OPERATION_CANCELLED',
   UNKNOWN_ERROR = 'UNKNOWN_ERROR'
 }
 
@@ -175,20 +181,26 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.NETWORK_ERROR]: '网络连接失败，请检查网络设置',
   [ErrorCode.AI_SERVICE_ERROR]: 'AI服务暂时不可用，请稍后重试',
   [ErrorCode.CONNECTION_TIMEOUT]: '连接超时，请检查网络或稍后重试',
+  [ErrorCode.REQUEST_TIMEOUT]: '请求超时，请稍后重试',
+  [ErrorCode.BACKEND_REQUEST_FAILED]: '后端服务请求失败，请稍后重试',
   [ErrorCode.AUTH_REQUIRED]: '需要登录才能使用此功能',
   [ErrorCode.AUTH_FAILED]: '登录失败，请检查凭据',
   [ErrorCode.AUTH_EXPIRED]: '登录已过期，请重新登录',
   [ErrorCode.INVALID_API_KEY]: 'API密钥无效，请在设置中更新',
+  [ErrorCode.AUTH_CANCELLED]: '用户取消了登录操作',
   [ErrorCode.CONFIG_MISSING]: '请先在设置中配置AI服务',
   [ErrorCode.CONFIG_INVALID]: '配置信息有误，请检查设置',
+  [ErrorCode.LOGIN_URL_FAILED]: '获取登录地址失败，请检查网络连接',
   [ErrorCode.INVALID_TEXT]: '请选择有效的文本内容',
   [ErrorCode.NO_ACTIVE_EDITOR]: '请先打开一个文档',
   [ErrorCode.ORIGINAL_TEXT_NOT_FOUND]: '无法找到原文，请重新选择文本',
   [ErrorCode.TEXT_TOO_LONG]: '文本过长，请分段处理',
   [ErrorCode.JSON_PARSE_ERROR]: 'AI响应格式错误，请重试',
   [ErrorCode.RESPONSE_FORMAT_ERROR]: 'AI响应格式不正确',
+  [ErrorCode.TOOL_CALL_PARSE_ERROR]: 'AI工具调用参数解析失败',
   [ErrorCode.UNKNOWN_COMMAND]: '未知命令',
   [ErrorCode.SERVICE_NOT_INITIALIZED]: '服务未初始化',
+  [ErrorCode.OPERATION_CANCELLED]: '操作已取消',
   [ErrorCode.UNKNOWN_ERROR]: '发生未知错误，请重试'
 };
 

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { ActionController } from './controllers/ActionController';
 import { ErrorHandlingService } from './services/ErrorHandlingService';
-import { UICommand, HostResult, isUICommand, DocMateError } from '@docmate/shared';
+import { UICommand, HostResult, isUICommand, DocMateError, ErrorCode } from '@docmate/shared';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'docmate.sidebar';
@@ -142,7 +142,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       }
     } catch (error) {
       console.error(`Error executing command ${command.command}:`, error);
-      this.sendErrorToWebview(error instanceof Error ? error.message : 'Unknown error');
+      // 直接传递错误对象，不要转换成字符串
+      this.sendErrorToWebview(error);
     } finally {
       // 隐藏加载状态
       this.sendToWebview({
@@ -216,29 +217,44 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    * 发送错误消息到webview
    */
   private sendErrorToWebview(error: string | Error | DocMateError): void {
+    console.log('SidebarProvider: sendErrorToWebview called with:', error);
+
     let errorData: DocMateError;
 
     if (typeof error === 'string') {
-      errorData = ErrorHandlingService.createError('UNKNOWN_ERROR' as any, error);
+      errorData = ErrorHandlingService.createError(ErrorCode.UNKNOWN_ERROR, error);
     } else if (error instanceof Error) {
       errorData = ErrorHandlingService.fromError(error);
     } else {
       errorData = error as DocMateError;
     }
 
+    console.log('SidebarProvider: Processed error data:', errorData);
+
+    // 生成友好消息
+    const friendlyMessage = ErrorHandlingService.getFriendlyMessage(errorData);
+    const suggestion = ErrorHandlingService.getSuggestedAction(errorData);
+
+    console.log('SidebarProvider: Generated friendly message:', friendlyMessage);
+    console.log('SidebarProvider: Generated suggestion:', suggestion);
+
     // 发送结构化错误信息
+    const errorPayload = {
+      error: friendlyMessage,
+      code: errorData.code,
+      details: errorData.details,
+      suggestion: suggestion
+    };
+
+    console.log('SidebarProvider: Sending error payload to webview:', errorPayload);
+
     this.sendToWebview({
       command: 'error',
-      payload: {
-        error: ErrorHandlingService.getFriendlyMessage(errorData),
-        code: errorData.code,
-        details: errorData.details,
-        suggestion: ErrorHandlingService.getSuggestedAction(errorData)
-      }
+      payload: errorPayload
     });
 
     // 记录详细错误日志
-    console.error('SidebarProvider Error:', ErrorHandlingService.formatForLogging(errorData));
+    ErrorHandlingService.logError(errorData, 'SidebarProvider.sendErrorToWebview');
   }
 
   /**

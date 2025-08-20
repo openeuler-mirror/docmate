@@ -242,11 +242,11 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
     const unsubscribe = vscodeApi.onMessage((message) => {
       if (message.command === 'config' && message.result && message.result.action === 'test') {
         if (message.result.success) {
-          // 成功：内联提示
-          setErrors({ baseUrl: '' });
+          // 成功：只显示测试状态，清除错误
+          setErrors({});
           setTestStatus({ ok: true, message: message.result.message || '连接测试成功！' });
         } else {
-          setErrors({ baseUrl: message.result.error || '连接测试失败' });
+          // 失败：只显示测试状态，不设置 errors
           setTestStatus({ ok: false, message: message.result.error || '连接测试失败' });
         }
         setIsLoading(false);

@@ -3,6 +3,8 @@ import { SidebarProvider } from './SidebarProvider';
 import { TextSource } from '@docmate/shared';
 import { AuthService } from './services/AuthService';
 import { OAuthService } from './services/OAuthService';
+import { ErrorHandlingService } from './services/ErrorHandlingService';
+import { ErrorCode } from '@docmate/shared';
 import { userConfigService } from './services/UserConfigService';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -201,8 +203,9 @@ function registerCommands(context: vscode.ExtensionContext, sidebarProvider: Sid
         );
       }
     } catch (error) {
-      console.error('Login command failed:', error);
-      vscode.window.showErrorMessage('登录失败，请重试');
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+      ErrorHandlingService.logError(docMateError, 'Extension.loginCommand');
+      await ErrorHandlingService.showVSCodeError(docMateError);
     }
   });
 
@@ -212,8 +215,9 @@ function registerCommands(context: vscode.ExtensionContext, sidebarProvider: Sid
       await authService.logout();
       vscode.window.showInformationMessage('已成功登出');
     } catch (error) {
-      console.error('Logout command failed:', error);
-      vscode.window.showErrorMessage('登出失败');
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+      ErrorHandlingService.logError(docMateError, 'Extension.logoutCommand');
+      await ErrorHandlingService.showVSCodeError(docMateError);
     }
   });
 

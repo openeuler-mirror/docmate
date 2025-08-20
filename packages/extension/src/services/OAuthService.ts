@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { AuthService } from './AuthService';
+import { ErrorHandlingService } from './ErrorHandlingService';
+import { ErrorCode } from '@docmate/shared';
 
 /**
  * OAuth认证服务
@@ -132,14 +134,17 @@ export class OAuthService implements vscode.UriHandler {
       return result;
 
     } catch (error) {
-      console.error('OAuthService: Login failed:', error);
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+      ErrorHandlingService.logError(docMateError, 'OAuthService.startLogin');
 
       // 询问用户是否要手动输入
-      const errorMessage = error instanceof Error ? error.message : '登录失败';
-      const fallback = await vscode.window.showErrorMessage(
-        `自动登录失败: ${errorMessage}\n\n是否尝试手动输入Cookie？`,
-        '手动输入',
-        '取消'
+      const fallback = await ErrorHandlingService.showVSCodeError(
+        ErrorHandlingService.createContextualError(
+          ErrorCode.AUTH_FAILED,
+          `自动登录失败: ${ErrorHandlingService.getFriendlyMessage(docMateError)}\n\n是否尝试手动输入Cookie？`,
+          'OAuth自动登录'
+        ),
+        ['手动输入', '取消']
       );
 
       if (fallback === '手动输入') {
@@ -147,8 +152,8 @@ export class OAuthService implements vscode.UriHandler {
         return;
       }
 
-      this.handleAuthError(error);
-      throw error;
+      this.handleAuthError(docMateError);
+      throw docMateError;
     }
   }
 
@@ -178,8 +183,9 @@ export class OAuthService implements vscode.UriHandler {
         this.authResolve();
       }
     } catch (error) {
-      console.error('OAuthService: Login with credentials failed:', error);
-      this.handleAuthError(error);
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+      ErrorHandlingService.logError(docMateError, 'OAuthService.loginWithCredentials');
+      this.handleAuthError(docMateError);
     } finally {
       this.clearPendingAuth();
     }
@@ -189,15 +195,16 @@ export class OAuthService implements vscode.UriHandler {
    * 处理认证错误
    */
   private handleAuthError(error: any): void {
-    console.error('OAuthService: Authentication error:', error);
-    
-    const errorMessage = error instanceof Error ? error.message : '登录失败';
-    vscode.window.showErrorMessage(`登录失败: ${errorMessage}`);
-    
+    const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+    ErrorHandlingService.logError(docMateError, 'OAuthService.handleAuthError');
+
+    // 显示用户友好的错误消息
+    ErrorHandlingService.showVSCodeError(docMateError);
+
     if (this.authReject) {
-      this.authReject(error);
+      this.authReject(docMateError);
     }
-    
+
     this.clearPendingAuth();
   }
 
@@ -207,9 +214,12 @@ export class OAuthService implements vscode.UriHandler {
   private handleAuthCallback(uri: vscode.Uri): void {
     // 这里可以添加更复杂的Cookie提取逻辑
     // 比如解析完整的URI或者使用其他方式获取Cookie
-    
-    console.log('OAuthService: Processing auth callback:', uri.toString());
-    
+
+    ErrorHandlingService.logError(
+      ErrorHandlingService.createError(ErrorCode.AUTH_REQUIRED, '需要手动输入认证信息'),
+      `OAuthService.handleAuthCallback: ${uri.toString()}`
+    );
+
     // 暂时显示需要手动输入的消息
     this.promptForManualInput();
   }
@@ -248,10 +258,10 @@ export class OAuthService implements vscode.UriHandler {
         );
 
         if (ready !== '输入Cookie') {
-          throw new Error('用户取消手动输入');
+          throw ErrorHandlingService.createError(ErrorCode.AUTH_CANCELLED, '用户取消手动输入');
         }
       } else if (proceed !== '输入Cookie') {
-        throw new Error('用户取消手动输入');
+        throw ErrorHandlingService.createError(ErrorCode.AUTH_CANCELLED, '用户取消手动输入');
       }
 
       // 输入_Y_G_ Cookie
@@ -271,7 +281,7 @@ export class OAuthService implements vscode.UriHandler {
       });
 
       if (!sessionCookie) {
-        throw new Error('未提供会话Cookie');
+        throw ErrorHandlingService.createError(ErrorCode.AUTH_CANCELLED, '未提供会话Cookie');
       }
 
       // 输入_U_T_ Token（可选）
@@ -295,23 +305,28 @@ export class OAuthService implements vscode.UriHandler {
       });
 
     } catch (error) {
-      console.error('OAuthService: Manual input failed:', error);
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+      ErrorHandlingService.logError(docMateError, 'OAuthService.promptForManualInput');
 
-      if (error instanceof Error && error.message.includes('取消')) {
+      if (docMateError.code === ErrorCode.OPERATION_CANCELLED ||
+          (error instanceof Error && error.message.includes('取消'))) {
         // 用户主动取消，不显示错误
         this.clearPendingAuth();
       } else {
         // 其他错误，询问是否重试
-        const retry = await vscode.window.showErrorMessage(
-          `手动登录失败: ${error instanceof Error ? error.message : '未知错误'}`,
-          '重试',
-          '取消'
+        const retry = await ErrorHandlingService.showVSCodeError(
+          ErrorHandlingService.createContextualError(
+            ErrorCode.AUTH_FAILED,
+            `手动登录失败: ${ErrorHandlingService.getFriendlyMessage(docMateError)}`,
+            '手动登录'
+          ),
+          ['重试', '取消']
         );
 
         if (retry === '重试') {
           await this.promptForManualInput();
         } else {
-          this.handleAuthError(error);
+          this.handleAuthError(docMateError);
         }
       }
     }
@@ -331,7 +346,8 @@ export class OAuthService implements vscode.UriHandler {
    */
   public cancelAuth(): void {
     if (this.pendingAuth) {
-      this.handleAuthError(new Error('用户取消登录'));
+      const cancelError = ErrorHandlingService.createError(ErrorCode.AUTH_CANCELLED, '用户取消登录');
+      this.handleAuthError(cancelError);
     }
   }
 }

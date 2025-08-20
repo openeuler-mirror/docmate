@@ -190,14 +190,17 @@ export class ActionController {
           result = await this.handleCancel();
           break;
         default:
-          throw createError(ErrorCode.UNKNOWN_COMMAND, `Unknown command: ${command}`);
+          throw ErrorHandlingService.createError(ErrorCode.UNKNOWN_COMMAND, `Unknown command: ${command}`);
       }
 
-      console.log('ActionController: Command', command, 'completed with result:', result);
+      // 记录成功日志（不使用错误日志方法）
+      console.log(`DocMate: ActionController.executeCommand - ${command} completed successfully`);
       return result;
     } catch (error) {
-      console.error('ActionController: Command', command, 'failed with error:', error);
-      throw error;
+      // 不要强制使用 UNKNOWN_ERROR，让 fromError 自己判断错误类型
+      const docMateError = ErrorHandlingService.fromError(error);
+      ErrorHandlingService.logError(docMateError, `ActionController.executeCommand - ${command}`);
+      throw docMateError;
     }
   }
 
@@ -206,7 +209,7 @@ export class ActionController {
    */
   private async ensureAuthenticated(): Promise<boolean> {
     if (!this.authService) {
-      throw createError('AUTH_NOT_INITIALIZED' as any, 'Authentication service not initialized');
+      throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Authentication service not initialized');
     }
 
     // 检查是否已认证
@@ -563,11 +566,11 @@ export class ActionController {
             message: '连接测试成功！'
           };
         } catch (error) {
-          const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
+          const docMateError = ErrorHandlingService.fromError(error);
           return {
             action: 'test',
             success: false,
-            error: docMateError.message
+            error: ErrorHandlingService.getFriendlyMessage(docMateError)
           };
         }
 

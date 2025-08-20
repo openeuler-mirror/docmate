@@ -1,6 +1,7 @@
 import { configService } from '@docmate/utils';
-import { createError, ChatMessage, AIResponse } from '@docmate/shared';
+import { createError, ChatMessage, AIResponse, ErrorCode } from '@docmate/shared';
 import { AuthService } from './AuthService';
+import { ErrorHandlingService } from './ErrorHandlingService';
 
 export interface BackendAIOptions {
   conversationHistory?: ChatMessage[];
@@ -113,13 +114,12 @@ export class BackendAIService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('BackendAIService: HTTP error response:', errorText);
-        
-        if (response.status === 401) {
-          throw createError('AUTH_EXPIRED', 'Authentication expired. Please login again.');
-        }
-        
-        throw createError('BACKEND_REQUEST_FAILED', `Backend request failed: ${response.status} ${errorText}`);
+        const error = ErrorHandlingService.createError(
+          response.status === 401 ? ErrorCode.AUTH_EXPIRED : ErrorCode.BACKEND_REQUEST_FAILED,
+          response.status === 401 ? 'Authentication expired. Please login again.' : `Backend request failed: ${response.status} ${errorText}`
+        );
+        ErrorHandlingService.logError(error, 'BackendAIService.makeRequest - HTTP Error');
+        throw error;
       }
 
       const data = await response.json();
@@ -129,20 +129,18 @@ export class BackendAIService {
 
     } catch (error) {
       clearTimeout(timeoutId);
-      
+
       if (error instanceof Error && error.name === 'AbortError') {
-        throw createError('REQUEST_TIMEOUT', 'Request timed out');
+        throw ErrorHandlingService.createError(ErrorCode.REQUEST_TIMEOUT, 'Request timed out');
       }
-      
+
       if (error instanceof Error && error.message.includes('AUTH_')) {
         throw error; // 重新抛出认证相关错误
       }
-      
-      console.error('BackendAIService: Request failed:', error);
-      throw createError(
-        'BACKEND_REQUEST_FAILED',
-        `Backend request failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.BACKEND_REQUEST_FAILED);
+      ErrorHandlingService.logError(docMateError, 'BackendAIService.makeRequest');
+      throw docMateError;
     }
   }
 
@@ -155,7 +153,8 @@ export class BackendAIService {
       const response = await fetch(`${backendUrl}/auth/status`);
       return response.ok;
     } catch (error) {
-      console.error('BackendAIService: Backend status check failed:', error);
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.BACKEND_REQUEST_FAILED);
+      ErrorHandlingService.logError(docMateError, 'BackendAIService.checkBackendStatus');
       return false;
     }
   }
@@ -172,10 +171,11 @@ export class BackendAIService {
         return await response.json();
       }
       
-      throw new Error(`Backend not available: ${response.status}`);
+      throw ErrorHandlingService.createError(ErrorCode.BACKEND_REQUEST_FAILED, `Backend not available: ${response.status}`);
     } catch (error) {
-      console.error('BackendAIService: Failed to get backend info:', error);
-      throw error;
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.BACKEND_REQUEST_FAILED);
+      ErrorHandlingService.logError(docMateError, 'BackendAIService.getBackendInfo');
+      throw docMateError;
     }
   }
 }

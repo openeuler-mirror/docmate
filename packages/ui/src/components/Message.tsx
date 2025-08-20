@@ -1,4 +1,7 @@
-import { formatTimestamp } from '@docmate/shared';
+// 本地格式化时间戳函数
+const formatTimestamp = (timestamp: number): string => {
+  return new Date(timestamp).toLocaleString();
+};
 
 interface MessageProps {
   type: 'user' | 'assistant';

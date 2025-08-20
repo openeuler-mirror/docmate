@@ -8,31 +8,39 @@ interface ErrorMessageProps {
 }
 
 export function ErrorMessage({ message, code, suggestion, onDismiss }: ErrorMessageProps) {
-  const getErrorIcon = (errorCode?: string) => {
+  console.log('ErrorMessage: Rendering with props:', { message, code, suggestion });
+
+  const getErrorIcon = (errorCode?: string | number) => {
     if (!errorCode) return '❌';
 
-    if (errorCode.includes('NETWORK') || errorCode.includes('CONNECTION')) {
+    const codeStr = String(errorCode);
+
+    if (codeStr.includes('NETWORK') || codeStr.includes('CONNECTION') || codeStr === '20') {
       return '🌐';
-    } else if (errorCode.includes('CONFIG') || errorCode.includes('API_KEY')) {
+    } else if (codeStr.includes('CONFIG') || codeStr.includes('API_KEY')) {
       return '⚙️';
-    } else if (errorCode.includes('TEXT') || errorCode.includes('EDITOR')) {
+    } else if (codeStr.includes('TEXT') || codeStr.includes('EDITOR')) {
       return '📝';
-    } else if (errorCode.includes('AUTH')) {
+    } else if (codeStr.includes('AUTH')) {
       return '🔐';
     }
 
     return '❌';
   };
 
-  const getErrorClass = (errorCode?: string) => {
+  const getErrorClass = (errorCode?: string | number) => {
     if (!errorCode) return 'error-message';
 
-    if (errorCode.includes('NETWORK') || errorCode.includes('CONNECTION')) {
+    const codeStr = String(errorCode);
+
+    if (codeStr.includes('NETWORK') || codeStr.includes('CONNECTION') || codeStr === '20') {
       return 'error-message network-error';
-    } else if (errorCode.includes('CONFIG') || errorCode.includes('API_KEY')) {
+    } else if (codeStr.includes('CONFIG') || codeStr.includes('API_KEY')) {
       return 'error-message config-error';
-    } else if (errorCode.includes('TEXT') || errorCode.includes('EDITOR')) {
+    } else if (codeStr.includes('TEXT') || codeStr.includes('EDITOR')) {
       return 'error-message user-error';
+    } else if (codeStr.includes('AUTH')) {
+      return 'error-message auth-error';
     }
 
     return 'error-message';

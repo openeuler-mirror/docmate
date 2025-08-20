@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { configService } from '@docmate/utils';
+import { ErrorHandlingService } from './ErrorHandlingService';
+import { ErrorCode, safeExecute } from '@docmate/shared';
 
 /**
  * 认证状态
@@ -131,26 +133,23 @@ export class AuthService {
    * 获取openEuler登录URL
    */
   public async getLoginUrl(): Promise<string> {
-    try {
+    return await safeExecute(async () => {
       const backendUrl = configService.getBackendBaseUrl();
       const response = await fetch(`${backendUrl}/auth/login-url`);
-      
+
       if (!response.ok) {
-        let errorMessage = "获取登录URL失败";
+        let errorCode = ErrorCode.LOGIN_URL_FAILED;
         if (response.status === 500) {
-          errorMessage = "后端服务暂时不可用，请稍后重试";
+          errorCode = ErrorCode.BACKEND_REQUEST_FAILED;
         } else if (response.status === 404) {
-          errorMessage = "登录服务未找到，请检查后端配置";
+          errorCode = ErrorCode.CONFIG_INVALID;
         }
-        throw new Error(errorMessage);
+        throw ErrorHandlingService.createError(errorCode);
       }
-      
+
       const data = await response.json() as { login_url: string };
       return data.login_url;
-    } catch (error) {
-      console.error('AuthService: Failed to get login URL:', error);
-      throw error;
-    }
+    }, 'AuthService.getLoginUrl', ErrorCode.LOGIN_URL_FAILED);
   }
 
   /**
@@ -173,7 +172,9 @@ export class AuthService {
       });
 
       if (!response.ok) {
+        let errorCode = ErrorCode.AUTH_FAILED;
         let errorMessage = `登录失败 (${response.status})`;
+
         try {
           const errorData = await response.json() as { detail?: string; message?: string };
           if (errorData.detail) {
@@ -184,14 +185,18 @@ export class AuthService {
         } catch {
           // 如果无法解析JSON，使用默认错误信息
           if (response.status === 401) {
+            errorCode = ErrorCode.INVALID_API_KEY;
             errorMessage = "认证失败，请检查Token是否正确";
           } else if (response.status === 500) {
+            errorCode = ErrorCode.BACKEND_REQUEST_FAILED;
             errorMessage = "服务器内部错误，请稍后重试";
           } else {
+            errorCode = ErrorCode.NETWORK_ERROR;
             errorMessage = `请求失败: ${response.statusText}`;
           }
         }
-        throw new Error(errorMessage);
+
+        throw ErrorHandlingService.createError(errorCode, errorMessage);
       }
 
       const authResponse = await response.json() as AuthResponse;
@@ -205,8 +210,9 @@ export class AuthService {
       return authResponse;
     } catch (error) {
       this.status = AuthStatus.ERROR;
-      console.error('AuthService: Login failed:', error);
-      throw error;
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+      ErrorHandlingService.logError(docMateError, 'AuthService.loginWithCredentials');
+      throw docMateError;
     }
   }
 
@@ -238,7 +244,7 @@ export class AuthService {
    */
   public async refreshToken(sessionCookie: string): Promise<void> {
     if (!this.currentToken) {
-      throw new Error('No current token to refresh');
+      throw ErrorHandlingService.createError(ErrorCode.AUTH_FAILED, 'No current token to refresh');
     }
 
     try {
@@ -255,13 +261,15 @@ export class AuthService {
       });
 
       if (!response.ok) {
-        throw new Error(`Token refresh failed: ${response.statusText}`);
+        throw ErrorHandlingService.createError(ErrorCode.AUTH_FAILED, `Token refresh failed: ${response.statusText}`);
       }
 
-      console.log('AuthService: Token refreshed successfully');
+      // 记录成功日志
+      console.log('DocMate: AuthService.refreshToken - Token refreshed successfully');
     } catch (error) {
-      console.error('AuthService: Token refresh failed:', error);
-      throw error;
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
+      ErrorHandlingService.logError(docMateError, 'AuthService.refreshToken');
+      throw docMateError;
     }
   }
 

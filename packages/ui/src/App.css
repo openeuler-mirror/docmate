@@ -1425,12 +1425,7 @@ body {
   color: var(--vscode-foreground);
 }
 
-.error-message {
-  display: block;
-  color: var(--vscode-errorForeground);
-  font-size: 12px;
-  margin-top: 4px;
-}
+
 
 .help-text {
   display: block;

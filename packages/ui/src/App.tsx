@@ -244,7 +244,9 @@ export default function App() {
    * 处理错误
    */
   const handleError = (message: HostResult) => {
+    console.log('App: handleError called with message:', message);
     const payload = message.payload;
+    console.log('App: Error payload:', payload);
 
     // 清理重试定时器
     if (retryTimerRef.current) {
@@ -253,6 +255,14 @@ export default function App() {
     }
     setRetryCount(0);
 
+    const errorInfo = {
+      message: payload?.error || '发生未知错误',
+      code: payload?.code,
+      suggestion: payload?.suggestion
+    };
+
+    console.log('App: Setting error info:', errorInfo);
+
     setState(prev => ({
       ...prev,
       operationState: {
@@ -260,11 +270,7 @@ export default function App() {
         isLoading: false,
         error: payload?.error,
       },
-      errorInfo: {
-        message: payload?.error || '发生未知错误',
-        code: payload?.code,
-        suggestion: payload?.suggestion
-      }
+      errorInfo: errorInfo
     }));
   };
 
