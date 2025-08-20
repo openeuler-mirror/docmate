@@ -143,7 +143,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     } catch (error) {
       console.error(`Error executing command ${command.command}:`, error);
       // 直接传递错误对象，不要转换成字符串
-      this.sendErrorToWebview(error);
+      this.sendErrorToWebview(error as Error);
     } finally {
       // 隐藏加载状态
       this.sendToWebview({

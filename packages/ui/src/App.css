@@ -1504,10 +1504,100 @@ body {
   color: var(--vscode-editorError-foreground);
 }
 
-.save-status:not(.saving):not(.saved):not(.error) {
+.save-status.unsaved {
   background: var(--vscode-editorWarning-background);
   border: 1px solid var(--vscode-editorWarning-border);
   color: var(--vscode-editorWarning-foreground);
+}
+
+/* 配置建议区域样式 */
+.config-advice {
+  margin: 20px 0;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.advice-toggle {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.2s;
+}
+
+.advice-toggle:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.advice-content {
+  padding: 16px;
+  background: var(--vscode-editor-background);
+  border-top: 1px solid var(--vscode-widget-border);
+}
+
+.advice-section {
+  margin-bottom: 20px;
+}
+
+.advice-section:last-child {
+  margin-bottom: 0;
+}
+
+.advice-section h4 {
+  margin: 0 0 12px 0;
+  color: var(--vscode-foreground);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.advice-item {
+  margin-bottom: 12px;
+}
+
+.advice-item:last-child {
+  margin-bottom: 0;
+}
+
+.advice-item strong {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+.advice-item ul {
+  margin: 8px 0 8px 20px;
+  padding: 0;
+}
+
+.advice-item li {
+  margin-bottom: 4px;
+  color: var(--vscode-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.advice-item code {
+  background: var(--vscode-textCodeBlock-background);
+  color: var(--vscode-textPreformat-foreground);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+}
+
+.advice-item p {
+  margin: 8px 0 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* 改进的diff显示样式 - 移除内部边框 */

@@ -15,15 +15,12 @@ interface ConfigProviderProps {
   onBack: () => void;
 }
 
-// 保存状态类型
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
-
 export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
   const [config, setConfig] = useState<AIConfig>({
     baseUrl: 'https://api.openai.com/v1',
     apiKey: '',
-    model: 'gpt-3.5-turbo',
-    timeout: 60000,
+    model: 'THUDM/GLM-4-32B-0414',
+    timeout: 90000,
     maxRetries: 3,
     testTimeout: 15000
   });
@@ -32,61 +29,14 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
   const [showApiKey, setShowApiKey] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok?: boolean; message?: string } | null>(null);
 
-  // 自动保存相关状态
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  // 未保存更改状态
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const initialConfigRef = useRef<AIConfig | null>(null);
 
-  // 自动保存函数
-  const autoSave = useCallback(async (configToSave: AIConfig) => {
-    if (saveStatus === 'saving') return; // 防止重复保存
+  // 配置建议展开状态
+  const [showAdvice, setShowAdvice] = useState(false);
 
-    setSaveStatus('saving');
 
-    try {
-      vscodeApi.postMessage({
-        command: 'config',
-        payload: {
-          action: 'save',
-          config: configToSave,
-          isAutoSave: true // 标记为自动保存
-        }
-      });
-
-      // 监听保存结果
-      const unsubscribe = vscodeApi.onMessage((message) => {
-        if (message.command === 'config' && message.result) {
-          if (message.result.success) {
-            setSaveStatus('saved');
-            setHasUnsavedChanges(false);
-            // 3秒后重置状态
-            setTimeout(() => setSaveStatus('idle'), 3000);
-          } else {
-            setSaveStatus('error');
-            // 5秒后重置状态
-            setTimeout(() => setSaveStatus('idle'), 5000);
-          }
-          unsubscribe();
-        }
-      });
-
-    } catch (error) {
-      setSaveStatus('error');
-      setTimeout(() => setSaveStatus('idle'), 5000);
-    }
-  }, [saveStatus]);
-
-  // 防抖自动保存
-  const debouncedAutoSave = useCallback((configToSave: AIConfig) => {
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
-
-    autoSaveTimerRef.current = setTimeout(() => {
-      autoSave(configToSave);
-    }, 1000); // 1秒防抖
-  }, [autoSave]);
 
   // 检查是否有未保存的更改
   const checkUnsavedChanges = useCallback((newConfig: AIConfig) => {
@@ -165,14 +115,6 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
     // 检查是否有未保存的更改
     const hasChanges = checkUnsavedChanges(newConfig);
     setHasUnsavedChanges(hasChanges);
-
-    // 如果有更改且配置有效，触发自动保存
-    if (hasChanges) {
-      const validationErrors = validateConfig(newConfig);
-      if (Object.keys(validationErrors).length === 0) {
-        debouncedAutoSave(newConfig);
-      }
-    }
   };
 
   // 保存配置
@@ -192,8 +134,7 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
         command: 'config',
         payload: {
           action: 'save',
-          config: config,
-          isAutoSave: false // 标记为手动保存
+          config: config
         }
       });
 
@@ -201,6 +142,9 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
       const unsubscribe = vscodeApi.onMessage((message) => {
         if (message.command === 'config' && message.result) {
           if (message.result.success) {
+            // 重置未保存更改状态
+            setHasUnsavedChanges(false);
+            initialConfigRef.current = config;
             onConfigSaved?.();
             onBack();
           } else if (message.result.error) {
@@ -265,59 +209,11 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
   };
 
   // 处理返回按钮点击
-  const handleBack = async () => {
-    // 如果有未保存的更改，先保存
-    if (hasUnsavedChanges) {
-      const validationErrors = validateConfig(config);
-      if (Object.keys(validationErrors).length === 0) {
-        await autoSave(config);
-      }
-    }
-
-    // 清理定时器
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
-
+  const handleBack = () => {
     onBack();
   };
 
-  // 组件卸载时清理定时器
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
-    };
-  }, []);
 
-  // 获取保存状态显示文本
-  const getSaveStatusText = () => {
-    switch (saveStatus) {
-      case 'saving':
-        return '保存中...';
-      case 'saved':
-        return '已保存';
-      case 'error':
-        return '保存失败';
-      default:
-        return hasUnsavedChanges ? '有未保存的更改' : '';
-    }
-  };
-
-  // 获取保存状态图标
-  const getSaveStatusIcon = () => {
-    switch (saveStatus) {
-      case 'saving':
-        return '⏳';
-      case 'saved':
-        return '✅';
-      case 'error':
-        return '❌';
-      default:
-        return hasUnsavedChanges ? '⚠️' : '';
-    }
-  };
 
   return (
     <div className="config-provider">
@@ -330,10 +226,10 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
       </div>
 
       <div className="config-form">
-        {/* 保存状态指示器 */}
-        {(saveStatus !== 'idle' || hasUnsavedChanges) && (
-          <div className={`save-status ${saveStatus}`}>
-            {getSaveStatusIcon()} {getSaveStatusText()}
+        {/* 未保存更改提醒 */}
+        {hasUnsavedChanges && (
+          <div className="save-status unsaved">
+            ⚠️ 有未保存的更改
           </div>
         )}
 
@@ -391,12 +287,12 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
             type="text"
             value={config.model}
             onChange={(e) => handleInputChange('model', e.target.value)}
-            placeholder="gpt-3.5-turbo"
+            placeholder="THUDM/GLM-4-32B-0414"
             className={errors.model ? 'error' : ''}
           />
           {errors.model && <span className="error-message">{errors.model}</span>}
           <small className="help-text">
-            具有Tools使用功能的AI模型名称，例如：deepseek-v3, qwen3-32B
+            支持Tools功能的AI模型。推荐快速模型：THUDM/GLM-4-32B-0414, zai-org/GLM-4.5-Air
           </small>
         </div>
 
@@ -412,13 +308,13 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
                 type="number"
                 min="5"
                 max="300"
-                value={config.timeout ? Math.floor(config.timeout / 1000) : 60}
+                value={config.timeout ? Math.floor(config.timeout / 1000) : 90}
                 onChange={(e) => handleInputChange('timeout', Number(e.target.value) * 1000)}
-                placeholder="60"
+                placeholder="90"
                 className={errors.timeout ? 'error' : ''}
               />
               {errors.timeout && <span className="error-message">{errors.timeout}</span>}
-              <small className="help-text">AI请求的超时时间，范围：5-300秒</small>
+              <small className="help-text">推理模型建议120-180秒，快速模型30-90秒</small>
             </div>
 
             <div className="form-group">
@@ -453,6 +349,65 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
             {errors.testTimeout && <span className="error-message">{errors.testTimeout}</span>}
             <small className="help-text">测试连接的超时时间，范围：3-60秒</small>
           </div>
+        </div>
+
+        {/* 配置建议区域 */}
+        <div className="config-advice">
+          <button
+            type="button"
+            className="advice-toggle"
+            onClick={() => setShowAdvice(!showAdvice)}
+          >
+            {showAdvice ? '🔽' : '▶️'} 配置建议与最佳实践
+          </button>
+
+          {showAdvice && (
+            <div className="advice-content">
+              <div className="advice-section">
+                <h4>🚀 模型选择建议</h4>
+                <div className="advice-item">
+                  <strong>快速模型（推荐）：</strong>
+                  <ul>
+                    <li><code>THUDM/GLM-4-32B-0414</code></li>
+                    <li><code>zai-org/GLM-4.5-Air</code></li>
+                  </ul>
+                  <p>✅ 优点：成本低，适合日常使用</p>
+                </div>
+
+                <div className="advice-item">
+                  <strong>推理模型：</strong>
+                  <ul>
+                    <li><code>deepseek-v3</code></li>
+                    <li><code>qwen3-32B</code></li>
+                  </ul>
+                  <p>⚠️ 注意：响应较慢（30-120秒），但推理能力更强，适合复杂任务</p>
+                </div>
+              </div>
+
+              <div className="advice-section">
+                <h4>⏱️ 超时时间设置</h4>
+                <div className="advice-item">
+                  <ul>
+                    <li><strong>快速模型：</strong>30-90秒（推荐60秒）</li>
+                    <li><strong>推理模型：</strong>90-180秒（推荐120秒）</li>
+                    <li><strong>网络较慢：</strong>可适当增加30-60秒</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="advice-section">
+                <h4>💡 使用建议</h4>
+                <div className="advice-item">
+                  <ul>
+                    <li>日常文档处理建议使用快速模型，响应速度快</li>
+                    <li>复杂逻辑分析可考虑推理模型，但需耐心等待</li>
+                    <li>首次使用建议先测试连接，确保配置正确</li>
+                    <li>如遇超时，可适当增加超时时间或切换快速模型</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="form-actions">
