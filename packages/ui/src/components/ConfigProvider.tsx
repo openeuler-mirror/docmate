@@ -377,10 +377,10 @@ export function ConfigProvider({ onConfigSaved, onBack }: ConfigProviderProps) {
                 <div className="advice-item">
                   <strong>推理模型：</strong>
                   <ul>
-                    <li><code>deepseek-v3</code></li>
-                    <li><code>qwen3-32B</code></li>
+                    <li><code>zai-org/GLM-4.5</code></li>
+                    <li><code>Qwen/QwQ-32B</code></li>
                   </ul>
-                  <p>⚠️ 注意：响应较慢（30-120秒），但推理能力更强，适合复杂任务</p>
+                  <p>⚠️ 注意：响应较慢，但推理能力更强，适合复杂任务</p>
                 </div>
               </div>
 
