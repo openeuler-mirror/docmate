@@ -149,14 +149,26 @@ export class ErrorHandlingService {
       }
     }
 
-    // 3. 提取英文错误信息
+    // 3. 提取HTTP状态码错误信息
+    const httpErrorMatch = errorMessage.match(/(?:HTTP\s+)?(\d{3})\s*[-:]\s*([^,\n\r]+)/i);
+    if (httpErrorMatch) {
+      const statusCode = httpErrorMatch[1];
+      const statusText = httpErrorMatch[2].trim();
+      console.log('ErrorHandlingService: Found HTTP error:', `${statusCode} ${statusText}`);
+      return `HTTP ${statusCode}: ${statusText}`;
+    }
+
+    // 4. 提取英文错误信息
     const englishErrorPatterns = [
       /no\s+available\s+channel[^.]*(?:\.|$)/i,
       /model\s+[^.]*(?:not\s+found|unavailable)[^.]*(?:\.|$)/i,
       /quota\s+exceeded[^.]*(?:\.|$)/i,
       /rate\s+limit\s+exceeded[^.]*(?:\.|$)/i,
       /invalid\s+api\s+key[^.]*(?:\.|$)/i,
-      /service\s+unavailable[^.]*(?:\.|$)/i
+      /service\s+unavailable[^.]*(?:\.|$)/i,
+      /gateway\s+timeout[^.]*(?:\.|$)/i,
+      /bad\s+gateway[^.]*(?:\.|$)/i,
+      /internal\s+server\s+error[^.]*(?:\.|$)/i
     ];
 
     for (const pattern of englishErrorPatterns) {
@@ -167,7 +179,7 @@ export class ErrorHandlingService {
       }
     }
 
-    // 4. 提取其他格式的错误信息
+    // 5. 提取其他格式的错误信息
     const errorMatch = errorMessage.match(/error['":\s]*([^,}]+)/i);
     if (errorMatch) {
       const extracted = errorMatch[1].replace(/['"]/g, '');
@@ -175,7 +187,7 @@ export class ErrorHandlingService {
       return extracted;
     }
 
-    // 5. 如果是纯中文错误信息且较短，直接返回
+    // 6. 如果是纯中文错误信息且较短，直接返回
     if (/^[\u4e00-\u9fa5\s，。！？：；""''（）【】]+$/.test(errorMessage) && errorMessage.length < 100) {
       console.log('ErrorHandlingService: Using pure Chinese error message:', errorMessage);
       return errorMessage;
@@ -323,10 +335,13 @@ export class ErrorHandlingService {
       case ErrorCode.TEXT_TOO_LONG:
         return '请将文本分段处理';
       
+      case ErrorCode.AI_SERVICE_ERROR:
+        return '服务暂时不可用，请稍后重试或检查网络连接';
+
       case ErrorCode.JSON_PARSE_ERROR:
       case ErrorCode.RESPONSE_FORMAT_ERROR:
         return '请重试，如果问题持续请联系支持';
-      
+
       default:
         return '请重试或联系技术支持';
     }

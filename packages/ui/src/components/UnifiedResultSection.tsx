@@ -50,6 +50,22 @@ export function UnifiedResultSection({
 
   const getTypeIcon = (type: string) => {
     switch (type) {
+      case 'TYPO':
+        return '✏️';
+      case 'PUNCTUATION':
+        return '❓';
+      case 'SPACING':
+        return '📏';
+      case 'FORMATTING':
+        return '📋';
+      case 'STYLE':
+        return '🎨';
+      case 'CONSISTENCY':
+        return '🔄';
+      case 'HYPERLINK_ERROR':
+        return '🔗';
+      case 'TERMINOLOGY':
+        return '📚';
       case 'terminology':
         return '📚';
       case 'grammar':

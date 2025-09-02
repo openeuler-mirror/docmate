@@ -55,7 +55,7 @@ export interface Issue {
   suggestion?: string;
   range: [number, number];
   severity: 'error' | 'warning' | 'info';
-  type: 'terminology' | 'grammar' | 'style' | 'consistency';
+  type: 'TYPO' | 'PUNCTUATION' | 'SPACING' | 'FORMATTING' | 'STYLE' | 'CONSISTENCY' | 'HYPERLINK_ERROR' | 'TERMINOLOGY';
 }
 
 // AI服务配置

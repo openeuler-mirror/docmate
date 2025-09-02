@@ -67,7 +67,7 @@ export const UnifiedResultCard: FC<UnifiedResultCardProps> = ({ result, onDismis
           items={result.issues && result.issues.length > 0 ?
             result.issues.map((issue: Issue, index: number) => ({
               id: `issue-${index}`,
-              type: issue.type || 'general',
+              type: issue.type || 'TERMINOLOGY',
               title: issue.message,
               description: issue.message,
               details: (issue as any).suggestion ? `建议：${(issue as any).suggestion}` : undefined,

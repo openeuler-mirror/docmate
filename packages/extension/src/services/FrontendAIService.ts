@@ -561,7 +561,7 @@ export class FrontendAIService {
         case 'check':
           modifiedText = response.correctedText || originalText;
           issues = (response.issues || []).map((issue: any) => ({
-            type: issue.type || 'grammar',
+            type: issue.issueType || issue.type || 'TERMINOLOGY',
             severity: issue.severity || 'info',
             message: issue.message || '',
             suggestion: issue.suggestion || '',
@@ -615,14 +615,11 @@ export class FrontendAIService {
       } as any;
     } catch (error) {
       console.error(`Failed to parse ${type} response:`, error, 'Raw response:', aiResponse);
-      return {
-        type,
-        originalText,
-        modifiedText: originalText,
-        diffs: [],
-        summary: `解析AI响应失败`,
-        explanation: `无法从AI响应中解析出有效的结果。原始响应: \n${aiResponse}`
-      };
+      // 不要返回"成功"的结果，而是抛出错误让上层处理
+      throw ErrorHandlingService.createError(
+        ErrorCode.RESPONSE_FORMAT_ERROR,
+        `解析AI响应失败: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -873,17 +870,16 @@ export class FrontendAIService {
                   items: {
                     type: 'object',
                     properties: {
-                      type: { type: 'string', enum: ['grammar','terminology','style','consistency'] },
+                      issueType: { type: 'string', enum: ['TYPO','PUNCTUATION','SPACING','FORMATTING','STYLE','HYPERLINK_ERROR','TERMINOLOGY'] },
                       severity: { type: 'string', enum: ['error','warning','info'] },
-                      message: { type: 'string', description: '简要标题（简短）' },
-                      suggestion: { type: 'string', description: '详细说明与建议（可多行）' },
-                      start: { type: 'number' },
-                      end: { type: 'number' },
-                      originalText: { type: 'string' },
-                      suggestedText: { type: 'string' },
-                      confidence: { type: 'number' }
+                      originalText: { type: 'string', description: '检测到问题的原始文本片段' },
+                      suggestedText: { type: 'string', description: '建议修正后的文本片段' },
+                      message: { type: 'string', description: '对问题的简短描述' },
+                      suggestion: { type: 'string', description: '对修正的详细解释和说明' },
+                      start: { type: 'number', description: '问题在原文中的起始位置索引' },
+                      end: { type: 'number', description: '问题在原文中的结束位置索引' }
                     },
-                    required: ['type','severity','message','suggestion','start','end']
+                    required: ['issueType','severity','originalText','suggestedText','message','suggestion','start','end']
                   }
                 }
               },
