@@ -20,7 +20,7 @@ export function buildCheckPrompt(text: string, checkTypes: string[], strictMode:
   - 检查顿号"、"是否仅用于句子内部的并列词语之间。
 
 **3. 空格 (\`SPACING\`)**
-  - 中文与英文单词、数字之间必须有且仅有一个半角空格。
+  - 中英文夹杂时，中文与英文单词、数字之间必须有且仅有一个半角空格。
   - 英文标点符号后应跟一个半角空格，前面不能有空格。
 
 **4. 格式 (\`FORMATTING\`)**
@@ -32,17 +32,18 @@ export function buildCheckPrompt(text: string, checkTypes: string[], strictMode:
   - 检查同一级别的内容（如多个并列的段落、列表项）的结尾标点是否保持一致（要么都有句号，要么都没有）。
   - 在表格或列表中，同一列的结尾标点风格应保持一致。
   - 描述功能键或UI元素的字体格式（如加粗）应在全文中保持一致。
+  - 检查上下文行间距（换行个数）是否一致。
 
 **6. 超链接 (\`HYPERLINK_ERROR\`)**
-  - 检查链接到外部手册的文本，是否正确包含了书名号《》。
+  - 检查链接到外部手册的文本，是否正确包含了书名号《》。如[xx手册](手册.md)应为《[xx手册](手册.md)》。
+  - 检查超链接文字描述和实际内容是否相符。如[xx](yy.md)应为[yy](yy.md)。
 
 **7. 术语 (\`TERMINOLOGY\`)**
   - 确保使用的技术术语符合 openEuler 规范，例如 "openEuler" 的大小写。
 
 **输出格式**:
 你必须仅通过调用函数 \`return_check_result\` 返回结构化结果。禁止输出任何其他文本、思考或解释。
-- 对于发现的每一个问题，都必须创建一个对应的 \`issue\` 对象。
-- 每一个 \`issue\` 对象都必须包含一个明确的 \`issueType\`，其值必须是以下之一：['TYPO', 'PUNCTUATION', 'SPACING', 'FORMATTING', 'STYLE', 'HYPERLINK_ERROR', 'TERMINOLOGY']。
+- 对于发现的每一个问题，都必须创建一个对应的 \`issue\` 对象。包含一个明确的 \`issueType\`，其值必须是以下之一：['TYPO', 'PUNCTUATION', 'SPACING', 'FORMATTING', 'STYLE', 'HYPERLINK_ERROR', 'TERMINOLOGY']。
 - \`message\` 字段应直接写规则标题。
 - \`suggestion\` 字段必须提供详细、专业的修改建议，包含：
   * 错误的具体原因和背景知识

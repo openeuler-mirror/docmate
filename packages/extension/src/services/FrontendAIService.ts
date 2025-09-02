@@ -282,10 +282,12 @@ export class FrontendAIService {
             const first = toolCalls[0];
             const argsStr = first?.function?.arguments || '{}';
             try {
-              const args = JSON.parse(argsStr);
+              // 增强的 JSON 解析，处理特殊字符
+              const args = this.parseToolCallArguments(argsStr);
               return { tool: first.function?.name, args };
             } catch (e) {
-              throw ErrorHandlingService.createError(ErrorCode.TOOL_CALL_PARSE_ERROR, 'Tool calling arguments JSON 解析失败');
+              console.error('Tool calling arguments parse error:', e, 'Raw args:', argsStr);
+              throw ErrorHandlingService.createError(ErrorCode.TOOL_CALL_PARSE_ERROR, `Tool calling arguments JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
             }
           }
 
@@ -560,6 +562,12 @@ export class FrontendAIService {
       switch (type) {
         case 'check':
           modifiedText = response.correctedText || originalText;
+          // 添加调试日志
+          if (response.correctedText && response.correctedText !== originalText) {
+            console.log('Check result - Original text length:', originalText.length);
+            console.log('Check result - Modified text length:', response.correctedText.length);
+            console.log('Check result - Modified text preview:', response.correctedText.substring(0, 200) + '...');
+          }
           issues = (response.issues || []).map((issue: any) => ({
             type: issue.issueType || issue.type || 'TERMINOLOGY',
             severity: issue.severity || 'info',
@@ -624,6 +632,62 @@ export class FrontendAIService {
   }
 
   /**
+   * 解析 Tool Call 参数 - 增强版本，处理特殊字符
+   */
+  private parseToolCallArguments(argsStr: string): any {
+    try {
+      // 直接尝试解析
+      return JSON.parse(argsStr);
+    } catch (firstError) {
+      console.warn('Direct JSON parse failed, trying enhanced parsing:', firstError);
+
+      try {
+        // 尝试修复常见的 JSON 问题
+        let fixedArgs = argsStr;
+
+        // 1. 修复字符串值中的控制字符
+        fixedArgs = fixedArgs.replace(/"([^"]*?)"/g, (match, content) => {
+          // 只处理字符串值，不处理属性名
+          if (content.includes(':') && !content.includes('\n') && !content.includes('\r') && !content.includes('\t')) {
+            return match; // 这可能是属性名，不要修改
+          }
+
+          let fixed = content;
+          // 转义未转义的特殊字符
+          fixed = fixed.replace(/\\/g, '\\\\'); // 先转义反斜杠
+          fixed = fixed.replace(/"/g, '\\"');   // 转义双引号
+          fixed = fixed.replace(/\n/g, '\\n');  // 转义换行符
+          fixed = fixed.replace(/\r/g, '\\r');  // 转义回车符
+          fixed = fixed.replace(/\t/g, '\\t');  // 转义制表符
+          fixed = fixed.replace(/`/g, '\\`');   // 转义反引号
+
+          return `"${fixed}"`;
+        });
+
+        // 2. 修复末尾多余的逗号
+        fixedArgs = fixedArgs.replace(/,(\s*[}\]])/g, '$1');
+
+        return JSON.parse(fixedArgs);
+      } catch (secondError) {
+        console.error('Enhanced JSON parse also failed:', secondError);
+
+        // 最后尝试：提取可能的 JSON 对象
+        try {
+          const match = argsStr.match(/\{[\s\S]*\}/);
+          if (match) {
+            return JSON.parse(match[0]);
+          }
+        } catch (thirdError) {
+          console.error('JSON extraction failed:', thirdError);
+        }
+
+        // 如果所有方法都失败，抛出原始错误
+        throw firstError;
+      }
+    }
+  }
+
+  /**
    * 从AI响应中提取JSON - 统一的解析方法
    */
   private extractJsonFromResponse(response: string): any {
@@ -642,7 +706,22 @@ export class FrontendAIService {
       text = text.replace(/,\s*([}\]])/g, '$1');
       // 替换非标准引号为标准引号（保守处理）
       text = text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-      return text.trim();
+
+      // 增强：修复字符串中未转义的特殊字符
+      try {
+        // 先尝试解析，如果失败再进行修复
+        JSON.parse(text);
+        return text.trim();
+      } catch {
+        // 修复未转义的反引号
+        text = text.replace(/(?<!\\)`/g, '\\`');
+        // 修复未转义的换行符
+        text = text.replace(/(?<!\\)\n/g, '\\n');
+        text = text.replace(/(?<!\\)\r/g, '\\r');
+        // 修复未转义的制表符
+        text = text.replace(/(?<!\\)\t/g, '\\t');
+        return text.trim();
+      }
     };
 
     // 策略1：直接解析完整JSON
@@ -694,21 +773,41 @@ export class FrontendAIService {
       return [{ type: 'equal', value: originalText }];
     }
 
+    // 检查原始文本是否以换行符结尾
+    const originalEndsWithNewline = originalText.endsWith('\n') || originalText.endsWith('\r\n');
+    const modifiedEndsWithNewline = modifiedText.endsWith('\n') || modifiedText.endsWith('\r\n');
+
     // 先按行级进行 LCS 对齐，再对变更的行做词级 diff，提高可读性
-    const originalLines = originalText.split(/\r?\n/);
-    const modifiedLines = modifiedText.split(/\r?\n/);
+    let originalLines = originalText.split(/\r?\n/);
+    let modifiedLines = modifiedText.split(/\r?\n/);
+
+    // 如果文本以换行符结尾，split 会产生一个空字符串作为最后一个元素，需要移除
+    if (originalEndsWithNewline && originalLines[originalLines.length - 1] === '') {
+      originalLines = originalLines.slice(0, -1);
+    }
+    if (modifiedEndsWithNewline && modifiedLines[modifiedLines.length - 1] === '') {
+      modifiedLines = modifiedLines.slice(0, -1);
+    }
+
     const lineDiffs = this.computeLineDiff(originalLines, modifiedLines);
 
     // 将行级 diff 中的 equal 直接返回，将 insert/delete 的行再拆成词级 diff
     const result: Diff[] = [];
-    for (const ld of lineDiffs) {
+    for (let i = 0; i < lineDiffs.length; i++) {
+      const ld = lineDiffs[i];
+      const isLastLine = i === lineDiffs.length - 1;
+
       if (ld.type === 'equal') {
-        result.push({ type: 'equal', value: ld.value + '\n' });
+        // 对于最后一行，根据原始文本是否有换行符来决定是否添加换行符
+        const shouldAddNewline = !isLastLine || originalEndsWithNewline;
+        result.push({ type: 'equal', value: ld.value + (shouldAddNewline ? '\n' : '') });
       } else if (ld.type === 'delete') {
         // 对删除的行直接标记整行删除并保留换行
-        result.push({ type: 'delete', value: ld.value + '\n' });
+        const shouldAddNewline = !isLastLine || originalEndsWithNewline;
+        result.push({ type: 'delete', value: ld.value + (shouldAddNewline ? '\n' : '') });
       } else if (ld.type === 'insert') {
-        result.push({ type: 'insert', value: ld.value + '\n' });
+        const shouldAddNewline = !isLastLine || modifiedEndsWithNewline;
+        result.push({ type: 'insert', value: ld.value + (shouldAddNewline ? '\n' : '') });
       } else if (ld.type === 'replace') {
         // 行内容有替换，做增强的词级 diff
         const tokensA = this.tokenizeForDiff(ld.a);
@@ -719,7 +818,10 @@ export class FrontendAIService {
           result.push(wd);
         }
         // 行尾换行
-        result.push({ type: 'equal', value: '\n' });
+        const shouldAddNewline = !isLastLine || modifiedEndsWithNewline;
+        if (shouldAddNewline) {
+          result.push({ type: 'equal', value: '\n' });
+        }
       }
     }
 
