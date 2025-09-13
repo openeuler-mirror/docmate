@@ -7,7 +7,6 @@ import { UserSettings } from '@docmate/shared';
 class ConfigService {
   private static instance: ConfigService;
   private config: Partial<UserSettings['aiService']> = {};
-  private backendBaseUrl: string = 'http://localhost:8000';
 
   private constructor() {}
 
@@ -25,19 +24,6 @@ class ConfigService {
     this.config = { ...this.config, ...config };
   }
 
-  /**
-   * 设置后端基础URL
-   */
-  public setBackendBaseUrl(url: string): void {
-    this.backendBaseUrl = url;
-  }
-
-  /**
-   * 获取后端基础URL
-   */
-  public getBackendBaseUrl(): string {
-    return this.backendBaseUrl;
-  }
 
   /**
    * 获取完整配置

@@ -2,7 +2,7 @@
   "name": "docmate",
   "displayName": "DocMate - openEuler Writing Assistant",
   "description": "AI-powered intelligent writing assistant for openEuler documentation with checking, polishing, translation and rewriting features",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "DelthinYee",
   "icon": "images/DocMate.png",
   "repository": {
@@ -120,13 +120,7 @@
     },
     "configuration": {
       "title": "DocMate",
-      "properties": {
-        "docmate.backend.baseUrl": {
-          "type": "string",
-          "default": "http://localhost:8000",
-          "description": "DocMate backend service URL"
-        }
-      }
+      "properties": {}
     }
   },
   "scripts": {
@@ -136,12 +130,9 @@
     "bundle": "node esbuild.config.js",
     "build:extension": "pnpm --filter extension build",
     "build:ui": "pnpm --filter ui build",
-    "dev": "pnpm run dev:extension & pnpm run dev:ui & pnpm run dev:backend",
+    "dev": "pnpm run dev:extension & pnpm run dev:ui",
     "dev:extension": "pnpm --filter extension dev",
     "dev:ui": "pnpm --filter ui dev",
-    "dev:backend": "pnpm --filter backend dev",
-    "dev:full": "pnpm run dev:extension & pnpm run dev:ui & pnpm run dev:backend",
-    "start:backend": "pnpm --filter backend start",
     "watch": "pnpm run watch:extension & pnpm run watch:ui",
     "watch:extension": "pnpm --filter extension watch",
     "watch:ui": "pnpm --filter ui watch",

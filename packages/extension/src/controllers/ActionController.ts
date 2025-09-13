@@ -11,8 +11,6 @@ import {
   ErrorCode
 } from '@docmate/shared';
 import { AuthService, AuthStatus } from '../services/AuthService';
-import { OAuthService } from '../services/OAuthService';
-import { BackendAIService } from '../services/BackendAIService';
 import { FrontendAIService } from '../services/FrontendAIService';
 import { DismissedStateService } from '../services/DismissedStateService';
 import { ErrorHandlingService } from '../services/ErrorHandlingService';
@@ -22,8 +20,6 @@ import { userConfigService, UserAIConfig } from '../services/UserConfigService';
 export class ActionController {
   private terminologyService: TerminologyService;
   private authService: AuthService | null = null;
-  private oauthService: OAuthService | null = null;
-  private backendAIService: BackendAIService | null = null;
   private frontendAIService: FrontendAIService | null = null;
   private dismissedStateService: DismissedStateService | null = null;
 
@@ -39,9 +35,12 @@ export class ActionController {
    * 初始化认证服务
    */
   public async initializeAuth(secretStorage: vscode.SecretStorage, context?: vscode.ExtensionContext): Promise<void> {
+    // 初始化认证服务（空实现）
     this.authService = AuthService.getInstance(secretStorage);
-    this.oauthService = OAuthService.getInstance(this.authService);
-    this.backendAIService = new BackendAIService(this.authService);
+    await this.authService.initialize();
+
+    // 初始化前端AI服务
+    await this.initializeFrontendAIService();
 
     // 初始化DismissedStateService
     if (context) {
@@ -49,11 +48,6 @@ export class ActionController {
       // 清理过期的dismissed状态
       await this.dismissedStateService.cleanupExpiredStates();
     }
-
-    // 初始化前端AI服务
-    await this.initializeFrontendAIService();
-
-    await this.authService.initialize();
   }
 
   /**
@@ -205,35 +199,15 @@ export class ActionController {
   }
 
   /**
-   * 检查认证状态
+   * 检查认证状态（简化版）
    */
   private async ensureAuthenticated(): Promise<boolean> {
     if (!this.authService) {
       throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Authentication service not initialized');
     }
 
-    // 检查是否已认证
-    if (this.authService.isAuthenticated()) {
-      // 验证Token是否仍然有效
-      const isValid = await this.authService.validateToken();
-      if (isValid) {
-        return true;
-      }
-    }
-
-    // 需要登录，使用OAuthService
-    if (!this.oauthService) {
-      throw createError('OAUTH_NOT_INITIALIZED' as any, 'OAuth service not initialized');
-    }
-
-    try {
-      await this.oauthService.startLogin();
-      return this.authService.isAuthenticated();
-    } catch (error) {
-      console.error('ActionController: Login failed:', error);
-      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
-      throw createError(docMateError.code as any, `Login failed: ${docMateError.message}`);
-    }
+    // 简化的认证逻辑：总是返回true，认证功能留待后续实现
+    return true;
   }
 
   /**
@@ -594,118 +568,39 @@ export class ActionController {
   /**
    * 处理认证命令
    */
+  /**
+   * 处理认证命令（简化版）
+   */
   private async handleAuth(payload: any): Promise<any> {
-    if (!this.authService || !this.oauthService) {
+    if (!this.authService) {
       throw createError('AUTH_NOT_INITIALIZED' as any, 'Authentication service not initialized');
     }
 
-    const { action, data } = payload;
+    const { action } = payload;
 
     switch (action) {
       case 'status':
         return {
-          isAuthenticated: this.authService.isAuthenticated(),
-          status: this.authService.getStatus(),
-          userInfo: this.authService.getUserInfo()
+          isAuthenticated: false,
+          status: 'not_implemented',
+          userInfo: null,
+          message: '认证功能暂未实现'
         };
 
       case 'login':
-        try {
-          await this.oauthService.startLogin();
-
-          if (this.authService.isAuthenticated()) {
-            const userInfo = this.authService.getUserInfo();
-            return {
-              success: true,
-              isAuthenticated: true,
-              status: 'authenticated',
-              userInfo: userInfo
-            };
-          } else {
-            return {
-              success: false,
-              isAuthenticated: false,
-              status: 'not_authenticated',
-              userInfo: null
-            };
-          }
-        } catch (error) {
-          const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
-          throw createError(docMateError.code as any, `Login failed: ${docMateError.message}`);
-        }
-
       case 'logout':
-        try {
-          await this.authService.logout();
-          return {
-            success: true,
-            message: '已成功登出'
-          };
-        } catch (error) {
-          const docMateError = ErrorHandlingService.fromError(error, 'LOGOUT_FAILED' as any);
-          throw createError(docMateError.code as any, `Logout failed: ${docMateError.message}`);
-        }
-
       case 'showStatus':
-        const isAuthenticated = this.authService.isAuthenticated();
-        const userInfo = this.authService.getUserInfo();
-
-        if (isAuthenticated && userInfo) {
-          vscode.window.showInformationMessage(
-            `当前用户: ${userInfo.username}\n邮箱: ${userInfo.email}\n状态: 已登录`
-          );
-        } else {
-          vscode.window.showInformationMessage('当前未登录DocMate');
-        }
-        return { status: 'shown' };
-
       case 'showNotImplemented':
-        vscode.window.showInformationMessage(
-          '登录功能暂未实现，请在配置中填写您的AI服务信息',
-          '立即登录'
-        ).then(selection => {
-          if (selection === '立即登录') {
-            vscode.window.showInformationMessage(
-              '您可以在插件配置中设置OpenAI兼容的API服务，包括基础URL、API密钥和模型名称。'
-            );
-          }
-        });
-        return { status: 'shown' };
+        vscode.window.showInformationMessage('认证功能暂未实现，请直接配置AI服务使用');
+        return {
+          success: false,
+          message: '认证功能暂未实现',
+          status: 'not_implemented'
+        };
 
       case 'loginWithToken':
-        // 兼容旧的token登录方式
-        if (!data || !data.token) {
-          throw createError('INVALID_PAYLOAD' as any, 'Token is required for login');
-        }
-        try {
-          const authResponse = await this.authService.loginWithSSOToken(data.token);
-          return {
-            success: true,
-            userInfo: authResponse.user_info
-          };
-        } catch (error) {
-          const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
-          throw createError(docMateError.code as any, `Login failed: ${docMateError.message}`);
-        }
-
       case 'loginWithCredentials':
-        // 新的双重认证登录方式
-        if (!data || !data.sessionCookie) {
-          throw createError('INVALID_PAYLOAD' as any, 'Session cookie is required for login');
-        }
-        try {
-          const authResponse = await this.authService.loginWithSSOCredentials(
-            data.sessionCookie,
-            data.token
-          );
-          return {
-            success: true,
-            userInfo: authResponse.user_info
-          };
-        } catch (error) {
-          const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AUTH_FAILED);
-          throw createError(docMateError.code as any, `Login failed: ${docMateError.message}`);
-        }
+        throw createError('AUTH_NOT_IMPLEMENTED' as any, '登录功能暂未实现');
 
       default:
         throw createError('UNKNOWN_AUTH_ACTION' as any, `Unknown auth action: ${action}`);
@@ -750,9 +645,6 @@ export class ActionController {
     const config = vscode.workspace.getConfiguration('docmate');
 
     return {
-      backend: {
-        baseUrl: config.get('backend.baseUrl', 'http://localhost:8000'),
-      },
       aiService: {
         apiKey: config.get('aiService.apiKey', ''),
         endpoint: config.get('aiService.endpoint', ''),
@@ -764,7 +656,6 @@ export class ActionController {
       masked: {
         hasApiKey: !!config.get('aiService.apiKey', ''),
         hasEndpoint: !!config.get('aiService.endpoint', ''),
-        hasBackendUrl: !!config.get('backend.baseUrl', ''),
       }
     };
   }
@@ -776,12 +667,6 @@ export class ActionController {
     const config = vscode.workspace.getConfiguration('docmate');
 
     try {
-      if (data.backend) {
-        if (data.backend.baseUrl !== undefined) {
-          await config.update('backend.baseUrl', data.backend.baseUrl, vscode.ConfigurationTarget.Global);
-        }
-      }
-
       if (data.aiService) {
         if (data.aiService.apiKey !== undefined) {
           await config.update('aiService.apiKey', data.aiService.apiKey, vscode.ConfigurationTarget.Global);
@@ -823,8 +708,6 @@ export class ActionController {
    */
   updateConfiguration(): void {
     const config = vscode.workspace.getConfiguration('docmate');
-    const backendBaseUrl = config.get('backend.baseUrl', 'http://localhost:8000');
-
     const newConfig = this.getAIConfig();
 
     // 同时更新configService
@@ -835,9 +718,6 @@ export class ActionController {
       timeout: newConfig.timeout,
       maxRetries: newConfig.maxRetries,
     });
-
-    // 设置后端基础URL
-    configService.setBackendBaseUrl(backendBaseUrl);
 
     // 更新前端AI服务配置
     if (this.frontendAIService) {

@@ -1,1 +1,0 @@
-# DocMate Backend Application
