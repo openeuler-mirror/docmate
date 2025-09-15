@@ -63,9 +63,196 @@ export class FrontendAIService {
   }
 
   /**
-   * 检查文本
+   * 检查文本 - v1.2新版结构化实现
    */
   async check(text: string, options: any = {}): Promise<AIResult> {
+    const {
+      enableGrammar = true,
+      enableStyle = true,
+      enableTerminology = true,
+      enableConsistency = true,
+      strictMode = false,
+      useV12Architecture = false  // 新增：是否使用v1.2架构
+    } = options;
+
+    if (useV12Architecture) {
+      // 使用v1.2新架构
+      return this.checkWithV12Architecture(text, options);
+    } else {
+      // 使用原有架构（保持向后兼容）
+      return this.checkWithLegacyArchitecture(text, options);
+    }
+  }
+
+  /**
+   * 使用v1.2架构进行文本检查
+   */
+  private async checkWithV12Architecture(text: string, options: any): Promise<AIResult> {
+    const {
+      enableGrammar = true,
+      enableStyle = true,
+      enableTerminology = true,
+      enableConsistency = true,
+    } = options;
+
+    // === 调试信息：v1.2架构检查开始 ===
+    console.log('\n=== FrontendAIService v1.2 Debug Info ===');
+    console.log('Input text length:', text.length);
+    console.log('Input text preview:', JSON.stringify(text.substring(0, 200)) + (text.length > 200 ? '...' : ''));
+    console.log('Options:', options);
+
+    try {
+      // 导入v1.2相关服务
+      const { ChunkerService } = await import('./ChunkerService');
+      const { ValidationService } = await import('./ValidationService');
+      const vscode = await import('vscode');
+
+      // 1. 获取选区范围
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
+      }
+
+      const selection = editor.selection;
+      const selectionRange = new vscode.Range(selection.start, selection.end);
+      console.log('Selection range:', selectionRange);
+
+      // 2. 文本分块
+      console.log('\n--- Starting Text Chunking ---');
+      const chunks = ChunkerService.chunkText(text, selectionRange);
+      console.log('Chunking completed, total chunks:', chunks.length);
+
+      if (!ChunkerService.validateChunks(chunks)) {
+        throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Failed to chunk text');
+      }
+
+      // 3. 并行处理chunks
+
+      const chunkPromises = chunks.map(async (chunk, index) => {
+        try {
+          console.log(`\n=== Processing Chunk ${index + 1}/${chunks.length} ===`);
+          console.log(`Chunk ID: ${chunk.id}`);
+          console.log(`Chunk core text: ${JSON.stringify(chunk.core_text)}`);
+          console.log(`Chunk context_before: ${chunk.context_before ? JSON.stringify(chunk.context_before) : '[none]'}`);
+          console.log(`Chunk context_after: ${chunk.context_after ? JSON.stringify(chunk.context_after) : '[none]'}`);
+          console.log(`Chunk range:`, chunk.range);
+
+          // 为单个chunk构建prompt
+          const { buildSingleChunkPrompt } = await import('../prompts/checkPrompts');
+          const chunkPayload = {
+            chunk
+          };
+          console.log(`Chunk payload:`, chunkPayload);
+
+          const chunkPrompt = buildSingleChunkPrompt(chunkPayload);
+          console.log(`Generated prompt length: ${chunkPrompt.length}`);
+          console.log(`Generated prompt preview: ${chunkPrompt.substring(0, 200)}...`);
+
+          // 调用AI服务处理单个chunk
+          console.log(`Calling AI service for chunk ${index + 1}...`);
+          const chunkAiResponse = await this.callAIService(chunkPrompt, [], this.getStructuredCheckToolOptions());
+          console.log(`AI response for chunk ${index + 1}:`, JSON.stringify(chunkAiResponse).substring(0, 500) + '...');
+
+          // 解析响应
+          const chunkLlmResult = this.parseStructuredAIResponse(chunkAiResponse);
+          console.log(`Parsed LLM result for chunk ${index + 1}:`, chunkLlmResult);
+
+          return {
+            chunk,
+            llmResult: chunkLlmResult,
+            prompt: chunkPrompt,
+            response: chunkAiResponse,
+            error: null
+          };
+
+        } catch (error) {
+          console.error(`Chunk ${index} processing failed:`, error);
+          return {
+            chunk,
+            llmResult: { suggestions: [] },
+            prompt: '',
+            response: '',
+            error: error
+          };
+        }
+      });
+
+      // 等待所有chunk处理完成
+      const chunkResults = await Promise.all(chunkPromises);
+
+      console.log('\n=== Chunk Processing Results ===');
+      console.log('Total chunks processed:', chunkResults.length);
+      chunkResults.forEach((result, index) => {
+        console.log(`Chunk ${index + 1} result:`, {
+          success: !result.error,
+          suggestionsCount: result.llmResult.suggestions?.length || 0,
+          error: result.error ? result.error.message : null,
+          suggestions: result.llmResult.suggestions?.map(s => ({
+            type: s.type,
+            description: s.description,
+            original_text: s.original_text,
+            suggested_text: s.suggested_text
+          }))
+        });
+      });
+
+      // 4. 合并结果
+      const allSuggestions = chunkResults.flatMap(result =>
+        result.llmResult.suggestions || []
+      );
+
+      console.log('\n=== Merged Suggestions ===');
+      console.log('Total suggestions before validation:', allSuggestions.length);
+      console.log('All suggestions:', allSuggestions.map((s, i) => ({
+        index: i,
+        chunk_id: s.chunk_id,
+        type: s.type,
+        description: s.description,
+        original_text: s.original_text,
+        suggested_text: s.suggested_text
+      })));
+
+      const mergedLlmResult = {
+        suggestions: allSuggestions
+      };
+
+      // 5. 验证和映射
+      console.log('\n--- Starting Validation and Mapping ---');
+      const diagnostics = ValidationService.validateAndMap(chunks, mergedLlmResult);
+      console.log('Validation completed, valid diagnostics:', diagnostics.length);
+      console.log('Diagnostics details:', diagnostics.map((d, i) => ({
+        index: i,
+        message: d.message,
+        severity: d.severity,
+        range: d.range,
+        original_text: d.original_text,
+        suggested_text: d.suggested_text
+      })));
+
+      
+      // 6. 转换为AIResult格式（保持向后兼容）
+      const result = this.convertDiagnosticsToAIResult(diagnostics, text);
+      console.log('\n=== Final AI Result ===');
+      console.log('Issues found:', result.issues?.length || 0);
+      console.log('AI result:', result);
+
+      return result;
+
+    } catch (error) {
+      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
+      ErrorHandlingService.logError(docMateError, 'FrontendAIService.checkWithV12Architecture');
+      throw ErrorHandlingService.createContextualError(
+        docMateError.code as ErrorCode,
+        `V1.2 text check failed: ${docMateError.message}`,
+        'FrontendAIService.checkWithV12Architecture'
+      );
+    }
+  }
+
+  /**
+   * 使用原有架构进行文本检查（向后兼容）
+   */
+  private async checkWithLegacyArchitecture(text: string, options: any): Promise<AIResult> {
     const {
       enableGrammar = true,
       enableStyle = true,
@@ -81,19 +268,19 @@ export class FrontendAIService {
     if (enableTerminology) checkTypes.push('术语使用');
     if (enableConsistency) checkTypes.push('内容一致性');
 
+    const { buildCheckPrompt } = await import('../prompts/checkPrompts');
     const prompt = buildCheckPrompt(text, checkTypes, strictMode);
 
     try {
       const aiResponse = await this.callAIService(prompt, [], this.getCheckToolOptions());
-      // 如果返回为 {tool,args}，直接传递即可；parse 支持对象
       return this.parseAIResponse(aiResponse, 'check', text);
     } catch (error) {
       const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
-      ErrorHandlingService.logError(docMateError, 'FrontendAIService.checkText');
+      ErrorHandlingService.logError(docMateError, 'FrontendAIService.checkWithLegacyArchitecture');
       throw ErrorHandlingService.createContextualError(
         docMateError.code as ErrorCode,
         `Text check failed: ${docMateError.message}`,
-        'FrontendAIService.checkText'
+        'FrontendAIService.checkWithLegacyArchitecture'
       );
     }
   }
@@ -1100,6 +1287,102 @@ export class FrontendAIService {
       }],
       toolChoice: { type: 'function', function: { name: 'return_translate_result' } },
       temperature: 0.1
+    };
+  }
+
+  /**
+   * 获取结构化检查的工具选项（v1.2架构）
+   */
+  private getStructuredCheckToolOptions() {
+    return {
+      responseFormat: { type: 'json_object' },
+      temperature: 0.1,
+      max_tokens: 4000
+    };
+  }
+
+  /**
+   * 解析结构化AI响应（v1.2架构）
+   */
+  private parseStructuredAIResponse(aiResponse: any): any {
+    try {
+      let response: any;
+
+      if (aiResponse && typeof aiResponse === 'object') {
+        // tool-calling 返回 { tool, args }
+        response = (aiResponse as any).args ?? aiResponse;
+      } else if (typeof aiResponse === 'string') {
+        response = this.extractJsonFromResponse(aiResponse);
+      } else {
+        response = {};
+      }
+
+      // 验证响应格式
+      if (!response || typeof response !== 'object') {
+        throw new Error('Invalid response format');
+      }
+
+      if (!Array.isArray(response.suggestions)) {
+        console.warn('Response does not contain suggestions array');
+        response.suggestions = [];
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Failed to parse structured AI response:', error, 'Raw response:', aiResponse);
+      throw ErrorHandlingService.createError(
+        ErrorCode.RESPONSE_FORMAT_ERROR,
+        `解析结构化AI响应失败: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * 将DiagnosticInfo转换为AIResult格式（保持向后兼容）
+   */
+  private convertDiagnosticsToAIResult(diagnostics: any[], originalText: string): AIResult {
+    // 创建修改后的文本
+    let modifiedText = originalText;
+
+    // 按位置倒序排序，避免位置偏移
+    const sortedDiagnostics = [...diagnostics].sort((a, b) => {
+      const aStart = a.range.start.line * 1000 + a.range.start.character;
+      const bStart = b.range.start.line * 1000 + b.range.start.character;
+      return bStart - aStart;
+    });
+
+    // 应用所有修改
+    for (const diagnostic of sortedDiagnostics) {
+      if (diagnostic.original_text && diagnostic.suggested_text) {
+        modifiedText = modifiedText.replace(
+          diagnostic.original_text,
+          diagnostic.suggested_text
+        );
+      }
+    }
+
+    // 构建issues
+    const issues = diagnostics.map(diagnostic => ({
+      type: diagnostic.suggestion_type,
+      severity: diagnostic.severity,
+      message: diagnostic.message,
+      suggestion: diagnostic.suggested_text,
+      range: [diagnostic.range.start.line, diagnostic.range.end.line] as [number, number],
+      original_text: diagnostic.original_text,
+      suggested_text: diagnostic.suggested_text
+    }));
+
+    // 构建diffs
+    const diffs = this.calculateDiff(originalText, modifiedText);
+
+    return {
+      type: 'check',
+      originalText,
+      modifiedText,
+      diffs,
+      issues,
+      summary: `发现 ${issues.length} 个问题`,
+      explanation: '使用v1.2架构进行精确的文本检查'
     };
   }
 

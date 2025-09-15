@@ -5,6 +5,7 @@ import { AuthService } from './services/AuthService';
 import { ErrorHandlingService } from './services/ErrorHandlingService';
 import { ErrorCode } from '@docmate/shared';
 import { userConfigService } from './services/UserConfigService';
+import { DiagnosticService } from './Services/DiagnosticService';
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('DocMate extension is now active!');
@@ -16,6 +17,9 @@ export async function activate(context: vscode.ExtensionContext) {
   const authService = AuthService.getInstance(context.secrets);
   await authService.initialize();
 
+  // 初始化v1.2诊断服务
+  DiagnosticService.initialize(context);
+  DiagnosticService.registerQuickFixCommands();
 
   // 创建侧边栏提供者
   const sidebarProvider = new SidebarProvider(context.extensionUri);
@@ -117,6 +121,7 @@ function registerCommands(context: vscode.ExtensionContext, sidebarProvider: Sid
     });
   });
 
+  
   // 润色文本命令
   const polishCommand = vscode.commands.registerCommand('docmate.polish', () => {
     executeTextOperation(result => {

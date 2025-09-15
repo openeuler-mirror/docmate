@@ -211,7 +211,7 @@ export class ActionController {
   }
 
   /**
-   * 处理检查命令 - 返回新的diff格式
+   * 处理检查命令 - 支持v1.2架构
    */
   private async handleCheck(payload: any): Promise<AIResult> {
     let { text, textSource, options = {} } = payload;
@@ -240,9 +240,60 @@ export class ActionController {
     // 确保AI服务已准备就绪
     await this.ensureAIServiceReady();
 
-    // 使用前端AI服务，传递文本来源信息
-    const result = await this.frontendAIService!.check(text, { ...options, textSource });
+    // 检查是否启用v1.2架构
+    const config = vscode.workspace.getConfiguration('docmate');
+    const useV12Architecture = config.get('experimental.v12Architecture', false);
+
+    // 使用前端AI服务，传递架构选项
+    const result = await this.frontendAIService!.check(text, {
+      ...options,
+      textSource,
+      useV12Architecture
+    });
+
+    // 如果使用v1.2架构，显示诊断信息
+    if (useV12Architecture) {
+      await this.showV12Diagnostics(result);
+    }
+
     return result;
+  }
+
+  /**
+   * 显示v1.2架构的诊断信息
+   */
+  private async showV12Diagnostics(result: AIResult): Promise<void> {
+    try {
+      const { DiagnosticService } = await import('../Services/DiagnosticService');
+      const editor = vscode.window.activeTextEditor;
+
+      if (editor && result.issues && result.issues.length > 0) {
+        console.log('ActionController: Showing v1.2 diagnostics for', result.issues.length, 'issues');
+
+        // 将issues转换为DiagnosticInfo格式
+        const diagnostics = result.issues.map(issue => ({
+          range: {
+            start: { line: issue.range[0] || 0, character: 0 },
+            end: { line: issue.range[1] || (issue.range[0] || 0), character: 100 }
+          },
+          message: issue.message,
+          severity: issue.severity,
+          source: 'DocMate',
+          code: issue.type,
+          original_text: issue.original_text || '',
+          suggested_text: issue.suggested_text || '',
+          suggestion_type: issue.type
+        }));
+
+        console.log('ActionController: Processed diagnostics:', diagnostics);
+        DiagnosticService.showDiagnostics(editor.document.uri, diagnostics);
+        console.log('ActionController: Diagnostics displayed successfully');
+      } else {
+        console.log('ActionController: No issues to display or no active editor');
+      }
+    } catch (error) {
+      console.error('Failed to show v1.2 diagnostics:', error);
+    }
   }
 
   /**

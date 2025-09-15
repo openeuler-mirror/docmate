@@ -295,3 +295,73 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+// ===== v1.2 新增类型定义 =====
+
+/**
+ * 文本块结构 (Chunker产出)
+ * 包含唯一ID、核心文本、上下文和精确位置信息
+ */
+export interface TextChunk {
+  id: string; // 唯一ID
+  core_text: string; // 核心文本
+  context_before?: string; // 上文
+  context_after?: string; // 下文
+  range: {
+    // 在文档中的绝对位置
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+}
+
+/**
+ * LLM 请求体 - 结构化的检查请求
+ */
+export interface CheckRequestPayload {
+  chunks: TextChunk[];
+}
+
+/**
+ * 单个chunk检查请求负载（用于并行处理）
+ */
+export interface SingleChunkRequestPayload {
+  chunk: TextChunk;
+}
+
+/**
+ * LLM 响应体中的建议结构
+ * 必须包含chunk_id用于精确关联
+ */
+export interface Suggestion {
+  chunk_id: string; // 必须返回的关联ID
+  type: string; // 问题类型
+  description: string; // 问题描述
+  original_text: string; // 原始错误文本
+  suggested_text: string; // 建议修改文本
+  severity: 'error' | 'warning' | 'info';
+}
+
+/**
+ * LLM 完整响应体
+ */
+export interface CheckResultPayload {
+  suggestions: Suggestion[];
+}
+
+/**
+ * 诊断信息 - 用于VS Code渲染
+ * 包含完整的诊断信息和精确位置
+ */
+export interface DiagnosticInfo {
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  message: string;
+  severity: 'error' | 'warning' | 'info';
+  source: string;
+  code?: string;
+  original_text: string;
+  suggested_text: string;
+  suggestion_type: string;
+}
+

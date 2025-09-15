@@ -2,8 +2,86 @@
  * 文本检查相关的Prompt模板
  */
 
+import { SingleChunkRequestPayload } from '@docmate/shared';
+
+/**
+ * 构建文本检查提示词 - v1.2结构化版本
+ * 支持分块处理和精确位置映射
+ */
+export function buildSingleChunkPrompt(payload: SingleChunkRequestPayload): string {
+
+  const { chunk } = payload;
+
+  return `你是openEuler文档审校专家。请检查核心文本中的问题，只返回JSON格式的结果。
+
+**要求**:
+- 只检查"核心文本"，上下文仅作参考
+- 每个问题必须提供精确的 original_text 和 suggested_text
+- 仅标记实际存在的问题，不要产生"幻觉"
+
+**检查规则 (必须严格遵守)**:
+
+**1. 错别字 (TYPO)**
+- 找出并修正中文错别字，包括同音字（如"部署"错为"布署"）、形近字（如"阈值"错为"阀值"）
+- 识别多余或缺失的文字
+
+**2. 标点符号 (PUNCTUATION)**
+- 纯英文内容中不应出现中文标点符号
+- 顿号"、"仅用于句子内部的并列词语之间
+
+**3. 空格 (SPACING)**
+- 中英文夹杂时必须有且仅有一个半角空格
+- 英文标点符号后应有半角空格，前面不能有空格
+
+**4. 格式 (FORMATTING)**
+- 行内代码、命令行和文件名必须用反引号 (\`) 包裹
+- 代码块注释符号必须正确
+
+**5. 风格 (STYLE)**
+- 同级别内容的结尾标点应保持一致
+- 描述功能键或UI元素的格式应在全文中保持一致
+- 行间距应保持一致
+
+**6. 超链接 (HYPERLINK_ERROR)**
+- 外部手册链接应包含书名号《》
+- 超链接文字描述应与实际内容相符
+
+**7. 术语 (TERMINOLOGY)**
+- 确保技术术语符合 openEuler 规范
+- "openEuler" 大小写必须正确
+
+**输出格式**:
+\`\`\`json
+{
+  "suggestions": [
+    {
+      "chunk_id": "${chunk.id}",
+      "type": "问题类型",
+      "description": "简短问题标题",
+      "original_text": "核心文本中的错误部分",
+      "suggested_text": "修改后的正确文本",
+      "severity": "error|warning|info"
+    }
+  ]
+}
+\`\`\`
+
+**文档内容**:
+---
+**核心文本**: 
+${chunk.core_text}
+---
+${chunk.context_before ? `**上文**: 
+${chunk.context_before}` : ''}
+---
+${chunk.context_after ? `**下文**: 
+${chunk.context_after}` : ''}
+`;
+}
+
 /**
  * 构建文本检查提示词，要求返回JSON格式
+ * @deprecated 请使用 buildStructuredCheckPrompt 替代
  */
 export function buildCheckPrompt(text: string, checkTypes: string[], strictMode: boolean = false): string {
 
