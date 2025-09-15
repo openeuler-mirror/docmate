@@ -126,53 +126,63 @@ export class FrontendAIService {
         throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Failed to chunk text');
       }
 
-      // 3. 并行处理chunks
+      // 3. 并行处理chunks - 真正的并行实现
+
+      console.log('\n=== Starting Parallel Chunk Processing ===');
+      const startTime = Date.now();
 
       const chunkPromises = chunks.map(async (chunk, index) => {
+        const chunkRequestId = `chunk-${chunk.id}-${index}`;
         try {
-          console.log(`\n=== Processing Chunk ${index + 1}/${chunks.length} ===`);
-          console.log(`Chunk ID: ${chunk.id}`);
-          console.log(`Chunk core text: ${JSON.stringify(chunk.core_text)}`);
-          console.log(`Chunk context_before: ${chunk.context_before ? JSON.stringify(chunk.context_before) : '[none]'}`);
-          console.log(`Chunk context_after: ${chunk.context_after ? JSON.stringify(chunk.context_after) : '[none]'}`);
-          console.log(`Chunk range:`, chunk.range);
+          console.log(`\n[${chunkRequestId}] === Processing Chunk ${index + 1}/${chunks.length} ===`);
+          console.log(`[${chunkRequestId}] Chunk ID: ${chunk.id}`);
+          console.log(`[${chunkRequestId}] Chunk core text: ${JSON.stringify(chunk.core_text)}`);
+          console.log(`[${chunkRequestId}] Chunk context_before: ${chunk.context_before ? JSON.stringify(chunk.context_before) : '[none]'}`);
+          console.log(`[${chunkRequestId}] Chunk context_after: ${chunk.context_after ? JSON.stringify(chunk.context_after) : '[none]'}`);
+          console.log(`[${chunkRequestId}] Chunk range:`, chunk.range);
 
           // 为单个chunk构建prompt
           const { buildSingleChunkPrompt } = await import('../prompts/checkPrompts');
           const chunkPayload = {
             chunk
           };
-          console.log(`Chunk payload:`, chunkPayload);
+          console.log(`[${chunkRequestId}] Chunk payload:`, chunkPayload);
 
           const chunkPrompt = buildSingleChunkPrompt(chunkPayload);
-          console.log(`Generated prompt length: ${chunkPrompt.length}`);
-          console.log(`Generated prompt preview: ${chunkPrompt.substring(0, 200)}...`);
+          console.log(`[${chunkRequestId}] Generated prompt length: ${chunkPrompt.length}`);
+          console.log(`[${chunkRequestId}] Generated prompt preview: ${chunkPrompt.substring(0, 200)}...`);
 
-          // 调用AI服务处理单个chunk
-          console.log(`Calling AI service for chunk ${index + 1}...`);
-          const chunkAiResponse = await this.callAIService(chunkPrompt, [], this.getStructuredCheckToolOptions());
-          console.log(`AI response for chunk ${index + 1}:`, JSON.stringify(chunkAiResponse).substring(0, 500) + '...');
+          // 调用AI服务处理单个chunk - 使用新的tools调用方式
+          console.log(`[${chunkRequestId}] Calling AI service for chunk ${index + 1}...`);
+          const chunkAiResponse = await this.callAIService(
+            chunkPrompt,
+            [],
+            this.getV12StructuredCheckToolOptions(chunkRequestId, chunk.id)
+          );
+          console.log(`[${chunkRequestId}] AI response for chunk ${index + 1}:`, JSON.stringify(chunkAiResponse).substring(0, 500) + '...');
 
-          // 解析响应
-          const chunkLlmResult = this.parseStructuredAIResponse(chunkAiResponse);
-          console.log(`Parsed LLM result for chunk ${index + 1}:`, chunkLlmResult);
+          // 解析响应，传入expectedChunkId确保chunk_id正确
+          const chunkLlmResult = this.parseStructuredAIResponse(chunkAiResponse, chunk.id);
+          console.log(`[${chunkRequestId}] Parsed LLM result for chunk ${index + 1}:`, chunkLlmResult);
 
           return {
             chunk,
             llmResult: chunkLlmResult,
             prompt: chunkPrompt,
             response: chunkAiResponse,
-            error: null
+            error: null,
+            processingTime: Date.now() - startTime
           };
 
         } catch (error) {
-          console.error(`Chunk ${index} processing failed:`, error);
+          console.error(`[${chunkRequestId}] Chunk ${index} processing failed:`, error);
           return {
             chunk,
             llmResult: { suggestions: [] },
             prompt: '',
             response: '',
-            error: error
+            error: error,
+            processingTime: Date.now() - startTime
           };
         }
       });
@@ -180,11 +190,17 @@ export class FrontendAIService {
       // 等待所有chunk处理完成
       const chunkResults = await Promise.all(chunkPromises);
 
+      const parallelProcessingTime = Date.now() - startTime;
+      console.log(`\n=== Parallel Processing Completed ===`);
+      console.log(`Total parallel processing time: ${parallelProcessingTime}ms`);
+      console.log(`Average time per chunk: ${Math.round(parallelProcessingTime / chunks.length)}ms`);
+      console.log(`Chunks processed successfully: ${chunkResults.filter(r => !r.error).length}/${chunks.length}`);
+
       console.log('\n=== Chunk Processing Results ===');
-      console.log('Total chunks processed:', chunkResults.length);
       chunkResults.forEach((result, index) => {
         console.log(`Chunk ${index + 1} result:`, {
           success: !result.error,
+          processingTime: result.processingTime,
           suggestionsCount: result.llmResult.suggestions?.length || 0,
           error: result.error ? result.error.message : null,
           suggestions: result.llmResult.suggestions?.map(s => ({
@@ -366,7 +382,7 @@ export class FrontendAIService {
   }
 
   /**
-   * 调用AI服务的核心方法
+   * 调用AI服务的核心方法 - 支持真正并行的请求处理
    */
   public async callAIService(
     prompt: string,
@@ -376,8 +392,11 @@ export class FrontendAIService {
       toolChoice?: any;
       responseFormat?: any;
       temperature?: number;
+      requestId?: string; // 用于标识并行请求的唯一ID
     } = {}
   ): Promise<any> {
+    const requestId = options.requestId || `req-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+
     // 验证配置
     const missingFields = [];
     if (!this.config.apiKey || this.config.apiKey.trim() === '') {
@@ -418,7 +437,7 @@ export class FrontendAIService {
       model: this.config.model,
       messages: messages,
       temperature: options.temperature ?? 0.1,
-      max_tokens: 2000,
+      max_tokens: options.tools ? 4000 : 2000, // tools调用需要更多tokens
     };
 
     if (options.tools) {
@@ -435,17 +454,19 @@ export class FrontendAIService {
       endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
     }
 
+    console.log(`[${requestId}] Starting AI call with tools: ${!!options.tools}, responseFormat: ${!!options.responseFormat}`);
+
     // 重试机制
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       try {
-        console.log(`FrontendAIService: Attempting AI call (${attempt + 1}/${this.config.maxRetries})`);
+        console.log(`[${requestId}] Attempting AI call (${attempt + 1}/${this.config.maxRetries})`);
 
-        // 创建AbortController用于动态超时控制
-        this.abortController = new AbortController();
+        // 为每个请求创建独立的AbortController，避免并行请求间的干扰
+        const requestAbortController = new AbortController();
 
-        // 设置初始超时
-        const initialTimeout = setTimeout(() => {
-          this.abortController?.abort();
+        // 设置超时
+        const timeoutId = setTimeout(() => {
+          requestAbortController.abort();
         }, this.config.timeout!);
 
         const response = await fetch(endpoint, {
@@ -455,25 +476,27 @@ export class FrontendAIService {
             'Authorization': `Bearer ${this.config.apiKey}`,
           },
           body: JSON.stringify(requestBody),
-          signal: this.abortController.signal
+          signal: requestAbortController.signal
         });
 
-        // 收到响应后清除初始超时
-        clearTimeout(initialTimeout);
+        // 清除超时
+        clearTimeout(timeoutId);
 
         if (response.ok) {
           const data = await response.json() as any;
           const choice = data.choices?.[0];
           const toolCalls = choice?.message?.tool_calls;
+
           if (toolCalls && toolCalls.length > 0) {
             const first = toolCalls[0];
             const argsStr = first?.function?.arguments || '{}';
             try {
               // 增强的 JSON 解析，处理特殊字符
               const args = this.parseToolCallArguments(argsStr);
+              console.log(`[${requestId}] Tool call successful: ${first.function?.name}`);
               return { tool: first.function?.name, args };
             } catch (e) {
-              console.error('Tool calling arguments parse error:', e, 'Raw args:', argsStr);
+              console.error(`[${requestId}] Tool calling arguments parse error:`, e, 'Raw args:', argsStr);
               throw ErrorHandlingService.createError(ErrorCode.TOOL_CALL_PARSE_ERROR, `Tool calling arguments JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
             }
           }
@@ -486,11 +509,11 @@ export class FrontendAIService {
               ErrorCode.RESPONSE_FORMAT_ERROR,
               'Invalid response format from AI service: no content or tool calls'
             );
-            ErrorHandlingService.logError(error, 'FrontendAIService.callAIService - Invalid Response');
+            ErrorHandlingService.logError(error, `[${requestId}] FrontendAIService.callAIService - Invalid Response`);
             throw error;
           }
 
-          console.log('FrontendAIService: AI call successful', {
+          console.log(`[${requestId}] AI call successful`, {
             attempt: attempt + 1,
             responseLength: content?.length || 0,
             hasToolCalls: toolCalls?.length > 0
@@ -503,7 +526,7 @@ export class FrontendAIService {
             ErrorCode.AI_SERVICE_ERROR,
             `AI service error: ${response.status} - ${errorText}`
           );
-          ErrorHandlingService.logError(error, `FrontendAIService.callAIService - Attempt ${attempt + 1}`);
+          ErrorHandlingService.logError(error, `[${requestId}] FrontendAIService.callAIService - Attempt ${attempt + 1}`);
 
           if (attempt === this.config.maxRetries - 1) {
             throw error;
@@ -511,7 +534,7 @@ export class FrontendAIService {
         }
       } catch (error) {
         const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
-        ErrorHandlingService.logError(docMateError, `FrontendAIService.callAIService - Attempt ${attempt + 1}`);
+        ErrorHandlingService.logError(docMateError, `[${requestId}] FrontendAIService.callAIService - Attempt ${attempt + 1}`);
 
         if (attempt === this.config.maxRetries - 1) {
           // 最后一次重试失败，保留原始错误码，只添加重试信息
@@ -523,11 +546,9 @@ export class FrontendAIService {
           throw finalError;
         }
 
-        // 等待一段时间后重试
-        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-      } finally {
-        // 清理连接状态
-        this.abortController = null;
+        // 等待一段时间后重试，使用随机退避避免并发请求的同步重试
+        const backoffTime = 1000 * (attempt + 1) * (0.8 + Math.random() * 0.4);
+        await new Promise(resolve => setTimeout(resolve, backoffTime));
       }
     }
 
@@ -1291,41 +1312,160 @@ export class FrontendAIService {
   }
 
   /**
-   * 获取结构化检查的工具选项（v1.2架构）
+   * 获取v1.2结构化检查的工具选项 - 使用真正的tools调用
    */
-  private getStructuredCheckToolOptions() {
+  private getV12StructuredCheckToolOptions(requestId: string = '', chunkId: string = '') {
     return {
-      responseFormat: { type: 'json_object' },
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'return_chunk_check_result',
+            description: '返回文本块检查的结构化结果，确保JSON格式稳定',
+            parameters: {
+              type: 'object',
+              properties: {
+                chunk_id: {
+                  type: 'string',
+                  description: '被检查的文本块的唯一标识符'
+                },
+                suggestions: {
+                  type: 'array',
+                  description: '检查结果建议列表',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      chunk_id: {
+                        type: 'string',
+                        description: '被检查的文本块的唯一标识符（必须与父级chunk_id一致）'
+                      },
+                      type: {
+                        type: 'string',
+                        enum: ['TYPO', 'PUNCTUATION', 'SPACING', 'FORMATTING', 'STYLE', 'HYPERLINK_ERROR', 'TERMINOLOGY'],
+                        description: '问题类型'
+                      },
+                      description: {
+                        type: 'string',
+                        description: '对问题的简短描述'
+                      },
+                      original_text: {
+                        type: 'string',
+                        description: '核心文本中的错误部分'
+                      },
+                      suggested_text: {
+                        type: 'string',
+                        description: '修改后的正确文本'
+                      },
+                      severity: {
+                        type: 'string',
+                        enum: ['error', 'warning', 'info'],
+                        description: '严重程度'
+                      }
+                    },
+                    required: ['chunk_id', 'type', 'description', 'original_text', 'suggested_text', 'severity']
+                  }
+                }
+              },
+              required: ['chunk_id', 'suggestions']
+            }
+          }
+        }
+      ],
+      toolChoice: { type: 'function', function: { name: 'return_chunk_check_result' } },
       temperature: 0.1,
-      max_tokens: 4000
+      max_tokens: 5000,
+      requestId: requestId
     };
   }
 
   /**
-   * 解析结构化AI响应（v1.2架构）
+   * 解析结构化AI响应（v1.2架构）- 支持tools调用和普通JSON响应，自动修复chunk_id
    */
-  private parseStructuredAIResponse(aiResponse: any): any {
+  private parseStructuredAIResponse(aiResponse: any, expectedChunkId?: string): any {
     try {
       let response: any;
+      let sourceType = '';
 
       if (aiResponse && typeof aiResponse === 'object') {
         // tool-calling 返回 { tool, args }
-        response = (aiResponse as any).args ?? aiResponse;
+        if (aiResponse.tool && aiResponse.args) {
+          response = aiResponse.args;
+          sourceType = 'tool-call';
+          console.log('Parsing response from tool call');
+        } else {
+          response = aiResponse;
+          sourceType = 'direct-object';
+        }
       } else if (typeof aiResponse === 'string') {
         response = this.extractJsonFromResponse(aiResponse);
+        sourceType = 'extracted-json';
+        console.log('Parsed JSON from string response');
       } else {
         response = {};
+        sourceType = 'empty';
       }
+
+      console.log('Response parsing details:', {
+        sourceType,
+        responseType: typeof response,
+        hasSuggestions: Array.isArray(response?.suggestions),
+        suggestionsCount: Array.isArray(response?.suggestions) ? response.suggestions.length : 0,
+        expectedChunkId: expectedChunkId
+      });
 
       // 验证响应格式
       if (!response || typeof response !== 'object') {
-        throw new Error('Invalid response format');
+        throw new Error(`Invalid response format: ${typeof response}`);
       }
 
-      if (!Array.isArray(response.suggestions)) {
-        console.warn('Response does not contain suggestions array');
-        response.suggestions = [];
+      // 处理tools调用返回的格式
+      if (sourceType === 'tool-call') {
+        // tools调用返回的格式可能直接是suggestions数组
+        if (response.suggestions && Array.isArray(response.suggestions)) {
+          console.log('Using suggestions from tool call response');
+        } else {
+          console.warn('Tool call response missing suggestions array');
+          response.suggestions = [];
+        }
+      } else {
+        // 处理普通JSON响应格式
+        if (!Array.isArray(response.suggestions)) {
+          console.warn('Response does not contain suggestions array, creating empty one');
+          response.suggestions = [];
+        }
       }
+
+      // 自动修复chunk_id
+      if (expectedChunkId) {
+        console.log(`Auto-fixing chunk_id to expected value: ${expectedChunkId}`);
+
+        // 修复顶级chunk_id
+        if (!response.chunk_id || response.chunk_id !== expectedChunkId) {
+          console.log(`Fixing top-level chunk_id from "${response.chunk_id}" to "${expectedChunkId}"`);
+          response.chunk_id = expectedChunkId;
+        }
+
+        // 修复suggestions中的chunk_id
+        for (const suggestion of response.suggestions) {
+          if (!suggestion.chunk_id || suggestion.chunk_id !== expectedChunkId) {
+            console.log(`Fixing suggestion chunk_id from "${suggestion.chunk_id}" to "${expectedChunkId}"`);
+            suggestion.chunk_id = expectedChunkId;
+          }
+        }
+      }
+
+      // 验证和标准化suggestions格式
+      const validSuggestions = [];
+      for (const suggestion of response.suggestions) {
+        if (this.isValidSuggestion(suggestion)) {
+          validSuggestions.push(this.normalizeSuggestion(suggestion));
+        } else {
+          console.warn('Invalid suggestion format, skipping:', suggestion);
+        }
+      }
+
+      response.suggestions = validSuggestions;
+      console.log(`Successfully parsed ${validSuggestions.length} valid suggestions`);
 
       return response;
     } catch (error) {
@@ -1335,6 +1475,28 @@ export class FrontendAIService {
         `解析结构化AI响应失败: ${error instanceof Error ? error.message : String(error)}`
       );
     }
+  }
+
+  /**
+   * 验证suggestion格式是否有效
+   */
+  private isValidSuggestion(suggestion: any): boolean {
+    const requiredFields = ['type', 'description', 'original_text', 'suggested_text', 'severity'];
+    return requiredFields.every(field => field in suggestion && suggestion[field] !== null && suggestion[field] !== undefined);
+  }
+
+  /**
+   * 标准化suggestion格式
+   */
+  private normalizeSuggestion(suggestion: any): any {
+    return {
+      chunk_id: suggestion.chunk_id || '',
+      type: suggestion.type,
+      description: suggestion.description,
+      original_text: suggestion.original_text,
+      suggested_text: suggestion.suggested_text,
+      severity: suggestion.severity
+    };
   }
 
   /**

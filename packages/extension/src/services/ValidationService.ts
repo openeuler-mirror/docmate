@@ -113,6 +113,19 @@ export class ValidationService {
     console.log(`Valid diagnostics: ${diagnostics.length}`);
     console.log(`Invalid suggestions: ${invalidSuggestions}`);
 
+    // 验证chunk_id分布
+    const chunkIdCounts = new Map<string, number>();
+    llmResponse.suggestions.forEach(suggestion => {
+      const chunkId = suggestion.chunk_id || 'empty';
+      const count = chunkIdCounts.get(chunkId) || 0;
+      chunkIdCounts.set(chunkId, count + 1);
+    });
+
+    console.log('Chunk ID distribution:');
+    chunkIdCounts.forEach((count, chunkId) => {
+      console.log(`  ${chunkId}: ${count} suggestions`);
+    });
+
     return diagnostics;
   }
 

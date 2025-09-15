@@ -6,18 +6,19 @@ import { SingleChunkRequestPayload } from '@docmate/shared';
 
 /**
  * 构建文本检查提示词 - v1.2结构化版本
- * 支持分块处理和精确位置映射
+ * 支持分块处理和精确位置映射，使用tools调用确保JSON稳定性
  */
 export function buildSingleChunkPrompt(payload: SingleChunkRequestPayload): string {
 
   const { chunk } = payload;
 
-  return `你是openEuler文档审校专家。请检查核心文本中的问题，只返回JSON格式的结果。
+  return `你是openEuler文档审校专家。请检查核心文本中的问题，必须使用 return_chunk_check_result 函数返回结果。
 
-**要求**:
+**重要要求**:
 - 只检查"核心文本"，上下文仅作参考
 - 每个问题必须提供精确的 original_text 和 suggested_text
 - 仅标记实际存在的问题，不要产生"幻觉"
+- 必须通过调用 return_chunk_check_result 函数返回结果，不要直接输出JSON
 
 **检查规则 (必须严格遵守)**:
 
@@ -50,31 +51,24 @@ export function buildSingleChunkPrompt(payload: SingleChunkRequestPayload): stri
 - 确保技术术语符合 openEuler 规范
 - "openEuler" 大小写必须正确
 
-**输出格式**:
-\`\`\`json
-{
-  "suggestions": [
-    {
-      "chunk_id": "${chunk.id}",
-      "type": "问题类型",
-      "description": "简短问题标题",
-      "original_text": "核心文本中的错误部分",
-      "suggested_text": "修改后的正确文本",
-      "severity": "error|warning|info"
-    }
-  ]
-}
-\`\`\`
+**函数调用说明**:
+你必须调用 return_chunk_check_result 函数，参数如下：
+- chunk_id: 必须精确设置为 "${chunk.id}"
+- suggestions: 问题建议数组，每个建议包含：
+  - chunk_id: 必须设置为 "${chunk.id}"（与父级相同）
+  - type: 问题类型（TYPO/PUNCTUATION/SPACING/FORMATTING/STYLE/HYPERLINK_ERROR/TERMINOLOGY）
+  - description: 简短问题标题
+  - original_text: 核心文本中的错误部分
+  - suggested_text: 修改后的正确文本
+  - severity: 严重程度（error/warning/info）
 
 **文档内容**:
----
-**核心文本**: 
+以下部分会提供核心文本和上下文，只需要检查核心文本，上下文仅供参考！
+**核心文本**:
 ${chunk.core_text}
----
-${chunk.context_before ? `**上文**: 
+${chunk.context_before ? `**上文**:
 ${chunk.context_before}` : ''}
----
-${chunk.context_after ? `**下文**: 
+${chunk.context_after ? `**下文**:
 ${chunk.context_after}` : ''}
 `;
 }
