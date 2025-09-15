@@ -14,7 +14,7 @@ import { ErrorCode } from '@docmate/shared';
 export class ValidationService {
 
   /**
-   * 验证并映射LLM响应到诊断信息
+   * 验证并映射LLM响应到诊断信息 - 增强调试版本
    * @param chunks 原始文本块数组
    * @param llmResponse LLM返回的响应
    * @returns DiagnosticInfo[] 有效的诊断信息数组
@@ -24,9 +24,13 @@ export class ValidationService {
     llmResponse: CheckResultPayload
   ): DiagnosticInfo[] {
 
-    console.log('\n=== ValidationService Debug Info ===');
-    console.log('Input chunks count:', chunks.length);
-    console.log('LLM response suggestions count:', llmResponse?.suggestions?.length || 0);
+    console.log('\n=== ValidationService 增强调试信息 ===');
+    console.log('输入chunks数量:', chunks.length);
+    console.log('LLM返回suggestions数量:', llmResponse?.suggestions?.length || 0);
+
+    // 新增：详细分析suggestions分布
+    this.analyzeSuggestionsDistribution(chunks, llmResponse?.suggestions || []);
+    console.log('--- 开始验证和映射处理 ---');
 
     if (!llmResponse || !Array.isArray(llmResponse.suggestions)) {
       console.warn('Invalid LLM response format');
@@ -74,8 +78,8 @@ export class ValidationService {
         console.log(`-> Found matching chunk: ${chunk.id}`);
         console.log('-> Chunk content:', JSON.stringify(chunk.core_text));
 
-        // 验证suggestion内容是否在chunk中存在
-        if (!this.validateSuggestionInChunk(suggestion, chunk)) {
+        // 验证suggestion内容是否在chunk中存在 - 传入上下文信息
+        if (!this.validateSuggestionInChunk(suggestion, chunk, llmResponse.suggestions, i)) {
           console.log(`-> Suggestion content not found in chunk: ${suggestion.chunk_id}`);
           invalidSuggestions++;
           continue;
@@ -92,8 +96,8 @@ export class ValidationService {
 
         console.log(`-> Suggestion passed all validations`);
 
-        // 创建诊断信息
-        const diagnostic = this.createDiagnostic(suggestion, chunk);
+        // 创建诊断信息 - 传入suggestion索引以支持重复文本定位
+        const diagnostic = this.createDiagnostic(suggestion, chunk, i);  // 传入索引i
         console.log(`-> Created diagnostic:`, {
           message: diagnostic.message,
           range: diagnostic.range,
@@ -163,51 +167,107 @@ export class ValidationService {
       return false;
     }
 
+    // 新增：检查original_text是否为空或长度为0
+    if (suggestion.original_text.trim().length === 0) {
+      console.warn(`Empty original_text: "${suggestion.original_text}"`);
+      return false;
+    }
+
+    // 新增：检查suggested_text是否为空或长度为0
+    if (suggestion.suggested_text.trim().length === 0) {
+      console.warn(`Empty suggested_text: "${suggestion.suggested_text}"`);
+      return false;
+    }
+
+    // 新增：检查original_text和suggested_text是否完全相同（无意义修改）
+    if (suggestion.original_text === suggestion.suggested_text) {
+      console.warn(`Identical original_text and suggested_text: "${suggestion.original_text}"`);
+      return false;
+    }
+
     return true;
   }
 
   /**
-   * 验证suggestion的内容是否在chunk中存在 - 简化版本
+   * 验证suggestion的内容是否在chunk中存在 - 增强版本支持重复文本处理
    */
-  private static validateSuggestionInChunk(suggestion: Suggestion, chunk: TextChunk): boolean {
+  private static validateSuggestionInChunk(
+    suggestion: Suggestion,
+    chunk: TextChunk,
+    allSuggestions: Suggestion[] = [],  // 新增：所有suggestion用于上下文分析
+    currentIndex: number = 0          // 新增：当前suggestion的索引
+  ): boolean {
     const chunkText = chunk.core_text;
     const originalText = suggestion.original_text;
 
-    // 1. 精确匹配
-    if (chunkText.includes(originalText)) {
-      return true;
+    console.log(`-> validateSuggestionInChunk: 验证 "${originalText}" 在 chunk ${chunk.id} (索引: ${currentIndex})`);
+
+    // 1. 精确匹配 + 重复文本处理
+    const occurrences = this.countOccurrences(chunkText, originalText);
+    if (occurrences > 0) {
+      // 检查当前suggestion是否有足够的出现次数
+      const expectedOccurrence = this.getExpectedOccurrenceIndex(allSuggestions, currentIndex, originalText);
+      if (occurrences > expectedOccurrence) {
+        console.log(`-> validateSuggestionInChunk: 找到 ${occurrences} 次 "${originalText}", 需要第 ${expectedOccurrence + 1} 次`);
+        return true;
+      } else {
+        console.log(`-> validateSuggestionInChunk: 只找到 ${occurrences} 次 "${originalText}", 但需要第 ${expectedOccurrence + 1} 次`);
+      }
     }
 
     // 2. 标准化匹配（处理多余空格）
     const normalizedChunk = chunkText.replace(/\s+/g, ' ').trim();
     const normalizedOriginal = originalText.replace(/\s+/g, ' ').trim();
-    if (normalizedChunk.includes(normalizedOriginal)) {
+    const normalizedOccurrences = this.countOccurrences(normalizedChunk, normalizedOriginal);
+    if (normalizedOccurrences > 0) {
+      console.log(`-> validateSuggestionInChunk: 标准化匹配成功`);
       return true;
     }
 
     // 3. 大小写不敏感匹配（仅英文内容）
-    if (originalText.match(/[a-zA-Z]/) &&
-        chunkText.toLowerCase().includes(originalText.toLowerCase())) {
-      return true;
+    if (originalText.match(/[a-zA-Z]/)) {
+      const lowerChunk = chunkText.toLowerCase();
+      const lowerOriginal = originalText.toLowerCase();
+      if (lowerChunk.includes(lowerOriginal)) {
+        console.log(`-> validateSuggestionInChunk: 大小写不敏感匹配成功`);
+        return true;
+      }
     }
 
     // 4. 对于较长的文本（>15字符），尝试核心部分匹配
     if (originalText.length > 15) {
       const coreText = originalText.substring(0, Math.min(originalText.length, 20));
       if (chunkText.includes(coreText)) {
-        console.log(`Partial match found for: "${originalText}" in chunk ${chunk.id}`);
+        console.log(`-> validateSuggestionInChunk: 核心部分匹配成功`);
         return true;
       }
     }
 
-    console.log(`No match found for: "${originalText}" in chunk "${chunkText.substring(0, 50)}..."`);
+    console.log(`-> validateSuggestionInChunk: 所有匹配方法都失败`);
     return false;
   }
 
   /**
-   * 创建诊断信息
+   * 获取当前suggestion预期的出现索引
    */
-  private static createDiagnostic(suggestion: Suggestion, chunk: TextChunk): DiagnosticInfo {
+  private static getExpectedOccurrenceIndex(
+    allSuggestions: Suggestion[],
+    currentIndex: number,
+    targetText: string
+  ): number {
+    let occurrenceIndex = 0;
+    for (let i = 0; i < currentIndex; i++) {
+      if (allSuggestions[i].original_text === targetText) {
+        occurrenceIndex++;
+      }
+    }
+    return occurrenceIndex;
+  }
+
+  /**
+   * 创建诊断信息 - 增强版本支持重复文本定位
+   */
+  private static createDiagnostic(suggestion: Suggestion, chunk: TextChunk, suggestionIndex: number = 0): DiagnosticInfo {
     console.log(`\n=== Creating Diagnostic for Suggestion ===`);
     console.log('Suggestion:', {
       type: suggestion.type,
@@ -221,22 +281,16 @@ export class ValidationService {
       range: chunk.range
     });
 
-    // 计算suggestion在chunk中的精确位置
+    // 计算suggestion在chunk中的精确位置 - 传入suggestion索引支持重复文本
     let range;
     try {
       console.log('-> Calculating precise range...');
-      range = this.calculateSuggestionRange(suggestion, chunk);
+      range = this.calculateSuggestionRange(suggestion, chunk, suggestionIndex);  // 传入索引
       console.log('-> Range calculated successfully:', range);
     } catch (error) {
       console.warn(`-> Failed to calculate range for suggestion in chunk ${chunk.id}:`, error);
-      // 使用chunk的起始位置作为fallback
-      range = {
-        start: { line: chunk.range.start.line, character: chunk.range.start.character },
-        end: {
-          line: chunk.range.start.line,
-          character: Math.min(chunk.range.start.character + 50, chunk.range.end.character)
-        }
-      };
+      // 使用智能回退策略而不是简单的chunk起始位置
+      range = this.calculateFallbackRange(suggestion, chunk, suggestionIndex);
       console.log(`-> Using fallback range for chunk ${chunk.id}:`, range);
     }
 
@@ -256,11 +310,12 @@ export class ValidationService {
   }
 
   /**
-   * 计算suggestion在文档中的精确位置（词级精度）
+   * 计算suggestion在文档中的精确位置（词级精度）- 修复重复文本定位问题
    */
   private static calculateSuggestionRange(
     suggestion: Suggestion,
-    chunk: TextChunk
+    chunk: TextChunk,
+    suggestionIndex: number = 0  // 新增：suggestion在列表中的索引，用于处理重复文本
   ): { start: { line: number; character: number }; end: { line: number; character: number } } {
 
     console.log('\n=== calculateSuggestionRange Debug ===');
@@ -272,13 +327,13 @@ export class ValidationService {
     console.log('Search text length:', searchText.length);
     console.log('Search text:', JSON.stringify(searchText));
 
-    // 查找搜索文本在chunk中的位置
+    // 查找搜索文本在chunk中的位置 - 修复重复文本定位
     let searchIndex = -1;
 
-    // 尝试1: 精确匹配
-    console.log('-> Trying exact match...');
-    searchIndex = chunkText.indexOf(searchText);
-    console.log('-> Exact match result:', searchIndex);
+    // 尝试1: 精确匹配 - 支持第N次出现
+    console.log('-> Trying exact match with occurrence support...');
+    searchIndex = this.findNthOccurrence(chunkText, searchText, suggestionIndex);
+    console.log(`-> Exact match result for occurrence ${suggestionIndex}:`, searchIndex);
 
     // 尝试2: 移除多余空格后匹配
     if (searchIndex === -1) {
@@ -338,8 +393,19 @@ export class ValidationService {
 
     // 计算搜索文本的长度（考虑规范化）
     let searchLength = searchText.length;
+
+    // 修复：检查length是否为0或无效
+    if (searchLength <= 0) {
+      console.warn(`Invalid search length: ${searchLength} for text: "${searchText}"`);
+      throw new Error(`Invalid search length: ${searchLength}`);
+    }
+
     if (searchIndex >= 0 && searchIndex + searchLength > chunkText.length) {
       searchLength = chunkText.length - searchIndex;
+      if (searchLength <= 0) {
+        console.warn(`Adjusted search length is invalid: ${searchLength}`);
+        throw new Error(`Invalid adjusted search length: ${searchLength}`);
+      }
     }
 
     // 精确计算在chunk中的相对位置
@@ -379,9 +445,13 @@ export class ValidationService {
     }
 
     if (lineSpan === 0) {
-      endCharacter = startCharacter + matchedLines[0].length;
+      // 修复：确保matchedLines[0]存在且有长度，避免endCharacter为0
+      const firstLineLength = matchedLines[0] ? matchedLines[0].length : 0;
+      endCharacter = startCharacter + Math.max(firstLineLength, 1); // 确保至少长度为1
     } else {
-      endCharacter = matchedLines[matchedLines.length - 1].length;
+      // 修复：确保matchedLines[matchedLines.length - 1]存在且有长度
+      const lastLineLength = matchedLines[matchedLines.length - 1] ? matchedLines[matchedLines.length - 1].length : 0;
+      endCharacter = Math.max(lastLineLength, 1); // 确保至少长度为1
     }
 
     // 验证计算的范围是否有效
@@ -500,6 +570,29 @@ export class ValidationService {
       length: Math.min(10, text.length),
       text: text.substring(0, Math.min(10, text.length))
     };
+  }
+
+  /**
+   * 查找文本中第N次出现的位置 - 支持重复文本定位
+   */
+  private static findNthOccurrence(
+    text: string,
+    search: string,
+    n: number
+  ): number {
+    if (!search || search.length === 0) return -1;
+
+    let index = -1;
+    for (let i = 0; i <= n; i++) {
+      index = text.indexOf(search, index + 1);
+      if (index === -1) {
+        console.log(`-> findNthOccurrence: Only found ${i} occurrences of "${search}", requested ${n + 1}`);
+        return -1;
+      }
+    }
+
+    console.log(`-> findNthOccurrence: Found occurrence ${n + 1} of "${search}" at index ${index}`);
+    return index;
   }
 
   /**
@@ -666,6 +759,175 @@ export class ValidationService {
   }
 
   /**
+   * 计算智能回退位置 - 当精确位置计算失败时的智能回退策略
+   */
+  private static calculateFallbackRange(
+    suggestion: Suggestion,
+    chunk: TextChunk,
+    suggestionIndex: number = 0
+  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
+
+    console.log(`-> calculateFallbackRange for suggestion "${suggestion.original_text}" in chunk ${chunk.id}`);
+
+    // 根据suggestion类型采用不同的回退策略
+    switch (suggestion.type) {
+      case 'PUNCTUATION':
+      case 'SPACING':
+        // 标点和空格问题：在chunk中查找相似的标点符号
+        return this.findPunctuationFallbackRange(chunk.core_text, chunk.range, suggestion);
+
+      case 'TERMINOLOGY':
+        // 术语问题：查找术语出现的所有可能位置
+        return this.findTerminologyFallbackRange(chunk.core_text, chunk.range, suggestion, suggestionIndex);
+
+      case 'TYPO':
+        // 错别字问题：基于文本长度估算位置
+        return this.findTypoFallbackRange(chunk.core_text, chunk.range, suggestion, suggestionIndex);
+
+      default:
+        // 通用回退策略：按suggestion索引均匀分布
+        return this.generateDistributedFallbackRange(chunk.core_text, chunk.range, suggestionIndex);
+    }
+  }
+
+  /**
+   * 标点符号回退策略
+   */
+  private static findPunctuationFallbackRange(
+    chunkText: string,
+    chunkRange: any,
+    suggestion: Suggestion
+  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
+
+    // 查找中文标点符号
+    const punctuationRegex = /[\u3000-\u303F\uFF00-\uFFEF]/g;
+    const matches = Array.from(chunkText.matchAll(punctuationRegex));
+
+    if (matches.length > 0) {
+      const match = matches[0]; // 使用第一个匹配的标点
+      const relativePos = match.index!;
+      return this.convertRelativePositionToAbsolute(chunkText, chunkRange, relativePos, 1);
+    }
+
+    // 如果没找到标点，返回chunk开始位置
+    return {
+      start: { line: chunkRange.start.line, character: chunkRange.start.character },
+      end: { line: chunkRange.start.line, character: chunkRange.start.character + 1 }
+    };
+  }
+
+  /**
+   * 术语回退策略
+   */
+  private static findTerminologyFallbackRange(
+    chunkText: string,
+    chunkRange: any,
+    suggestion: Suggestion,
+    suggestionIndex: number
+  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
+
+    // 尝试找到suggestion中的关键词
+    const keywords = suggestion.original_text.split(/\s+/).filter(word => word.length > 1);
+
+    for (const keyword of keywords) {
+      const occurrences = this.countOccurrences(chunkText, keyword);
+      if (occurrences > suggestionIndex) {
+        const position = this.findNthOccurrence(chunkText, keyword, suggestionIndex);
+        if (position !== -1) {
+          return this.convertRelativePositionToAbsolute(chunkText, chunkRange, position, keyword.length);
+        }
+      }
+    }
+
+    // 回退到分布式定位
+    return this.generateDistributedFallbackRange(chunkText, chunkRange, suggestionIndex);
+  }
+
+  /**
+   * 错别字回退策略
+   */
+  private static findTypoFallbackRange(
+    chunkText: string,
+    chunkRange: any,
+    suggestion: Suggestion,
+    suggestionIndex: number
+  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
+
+    // 对于错别字，基于文本长度按比例分布
+    const totalLength = chunkText.length;
+    const segmentSize = Math.max(10, Math.floor(totalLength / Math.max(1, suggestionIndex + 1)));
+    const position = Math.min(suggestionIndex * segmentSize, totalLength - suggestion.original_text.length);
+
+    return this.convertRelativePositionToAbsolute(chunkText, chunkRange, position, suggestion.original_text.length);
+  }
+
+  /**
+   * 通用分布式回退策略
+   */
+  private static generateDistributedFallbackRange(
+    chunkText: string,
+    chunkRange: any,
+    suggestionIndex: number
+  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
+
+    // 将chunk分成若干段，每段放置一个suggestion
+    const totalLength = chunkText.length;
+    const estimatedSuggestionCount = suggestionIndex + 1;
+    const segmentSize = Math.max(20, Math.floor(totalLength / estimatedSuggestionCount));
+    const position = Math.min(suggestionIndex * segmentSize, totalLength - 1);
+
+    return this.convertRelativePositionToAbsolute(chunkText, chunkRange, position, Math.min(10, totalLength - position));
+  }
+
+  /**
+   * 将相对位置转换为绝对位置
+   */
+  private static convertRelativePositionToAbsolute(
+    chunkText: string,
+    chunkRange: any,
+    relativePos: number,
+    length: number
+  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
+
+    const textBeforeMatch = chunkText.substring(0, relativePos);
+    const linesBeforeMatch = textBeforeMatch.split('\n');
+    const lineOffset = linesBeforeMatch.length - 1;
+    const characterOffset = linesBeforeMatch[linesBeforeMatch.length - 1].length;
+
+    const startLine = chunkRange.start.line + lineOffset;
+    const endLine = startLine;
+
+    let startCharacter = 0;
+    if (lineOffset === 0) {
+      startCharacter = chunkRange.start.character + characterOffset;
+    } else {
+      startCharacter = characterOffset;
+    }
+
+    const endCharacter = startCharacter + length;
+
+    return {
+      start: { line: startLine, character: startCharacter },
+      end: { line: endLine, character: endCharacter }
+    };
+  }
+
+  /**
+   * 统计文本中子串出现的次数
+   */
+  private static countOccurrences(text: string, search: string): number {
+    if (!search || search.length === 0) return 0;
+
+    let count = 0;
+    let index = 0;
+    while ((index = text.indexOf(search, index)) !== -1) {
+      count++;
+      index += search.length;
+    }
+    return count;
+  }
+
+  /**
    * 检查是否为无意义的建议 - 简化版本
    */
   private static isTrivialSuggestion(suggestion: Suggestion): boolean {
@@ -691,6 +953,57 @@ export class ValidationService {
     }
 
     return false;
+  }
+
+  /**
+   * 分析suggestions分布情况 - 增强调试能力
+   */
+  private static analyzeSuggestionsDistribution(chunks: TextChunk[], suggestions: Suggestion[]): void {
+    console.log('\n--- Suggestions Distribution Analysis ---');
+
+    // 按chunk_id分组
+    const suggestionsByChunk = new Map<string, Suggestion[]>();
+    suggestions.forEach(suggestion => {
+      const chunkId = suggestion.chunk_id || 'unknown';
+      if (!suggestionsByChunk.has(chunkId)) {
+        suggestionsByChunk.set(chunkId, []);
+      }
+      suggestionsByChunk.get(chunkId)!.push(suggestion);
+    });
+
+    console.log('按chunk分组的suggestions:');
+    suggestionsByChunk.forEach((suggestions, chunkId) => {
+      console.log(`  Chunk ${chunkId}: ${suggestions.length} suggestions`);
+      suggestions.forEach((s, index) => {
+        console.log(`    [${index}] Type: ${s.type}, Text: "${s.original_text}" -> "${s.suggested_text}"`);
+      });
+    });
+
+    // 分析重复内容
+    const contentMap = new Map<string, number>();
+    suggestions.forEach(suggestion => {
+      const content = suggestion.original_text;
+      contentMap.set(content, (contentMap.get(content) || 0) + 1);
+    });
+
+    console.log('重复内容分析:');
+    contentMap.forEach((count, content) => {
+      if (count > 1) {
+        console.log(`  "${content}" 出现 ${count} 次`);
+      }
+    });
+
+    // 按类型统计
+    const typeStats = new Map<string, number>();
+    suggestions.forEach(suggestion => {
+      const type = suggestion.type;
+      typeStats.set(type, (typeStats.get(type) || 0) + 1);
+    });
+
+    console.log('按类型统计:');
+    typeStats.forEach((count, type) => {
+      console.log(`  ${type}: ${count} 个`);
+    });
   }
 
   /**

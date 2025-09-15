@@ -35,7 +35,7 @@ export function buildSingleChunkPrompt(payload: SingleChunkRequestPayload): stri
 - 英文标点符号后应有半角空格，前面不能有空格
 
 **4. 格式 (FORMATTING)**
-- 行内代码、命令行和文件名需要用反引号 (\`) 包裹，只有确认要包裹的再添加，不用特别严格
+- 行内代码、命令行和文件名需要用反引号 (\`) 包裹，只有确认要包裹的再添加，不用特别严格，且\`\`\`代码块内的命令不用管
 - 代码块注释符号必须正确
 - 标题等格式一致性问题在风格中检查，此处不检查
 
@@ -49,8 +49,9 @@ export function buildSingleChunkPrompt(payload: SingleChunkRequestPayload): stri
 - 超链接文字描述应与实际内容相符
 
 **7. 术语 (TERMINOLOGY)**
-- 确保技术术语符合 openEuler 规范
-- "openEuler" 大小写必须正确
+- 仅检查明显的术语大小写错误（如 "OpenEuler" 或 "openeuler" 应为 "openEuler"）
+- 如果术语已经是正确格式，不要创建不必要的suggestion
+- 确保术语在文档中的使用一致性
 
 **函数调用说明**:
 你必须调用 return_chunk_check_result 函数，参数如下：
@@ -112,7 +113,9 @@ export function buildCheckPrompt(text: string, checkTypes: string[], strictMode:
   - 检查超链接文字描述和实际内容是否相符。如[xx](yy.md)应为[yy](yy.md)。
 
 **7. 术语 (\`TERMINOLOGY\`)**
-  - 确保使用的技术术语符合 openEuler 规范，例如 "openEuler" 的大小写。
+  - 仅检查明显的术语大小写错误（如 "OpenEuler" 或 "openeuler" 应为 "openEuler"）。
+  - 如果术语已经是正确格式，不要创建不必要的suggestion。
+  - 确保术语在文档中的使用一致性。
 
 **输出格式**:
 你必须仅通过调用函数 \`return_check_result\` 返回结构化结果。禁止输出任何其他文本、思考或解释。
