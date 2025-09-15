@@ -116,6 +116,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             payload: { status: 'applied' }
           } as HostResult);
           break;
+        case 'clearDiagnostics':
+          // 清除诊断信息命令
+          this.sendToWebview({
+            command: 'ready',
+            payload: { status: 'cleared' }
+          } as HostResult);
+          break;
         case 'auth':
           // 认证命令响应
           this.sendToWebview({

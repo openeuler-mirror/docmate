@@ -56,6 +56,8 @@ export interface Issue {
   range: [number, number];
   severity: 'error' | 'warning' | 'info';
   type: 'TYPO' | 'PUNCTUATION' | 'SPACING' | 'FORMATTING' | 'STYLE' | 'CONSISTENCY' | 'HYPERLINK_ERROR' | 'TERMINOLOGY';
+  original_text?: string;
+  suggested_text?: string;
 }
 
 // AI服务配置

@@ -47,6 +47,47 @@ export const UnifiedResultCard: FC<UnifiedResultCardProps> = ({ result, onDismis
   };
 
   const handleReject = () => {
+    // 清除相关的波浪线
+    try {
+      console.log('🔥 UnifiedResultCard: handleReject called');
+      console.log('🔥 UnifiedResultCard: result.issues:', result.issues);
+
+      // 获取所有 issues 的原始文本
+      const originalTexts: string[] = [];
+      if (result.issues && result.issues.length > 0) {
+        result.issues.forEach((issue: Issue, index: number) => {
+          if (issue.original_text) {
+            originalTexts.push(issue.original_text);
+            console.log(`🔥 UnifiedResultCard: Issue ${index} original_text:`, issue.original_text);
+          }
+        });
+      }
+
+      // 如果没有找到原始文本，使用从 diffs 计算的文本
+      if (originalTexts.length === 0) {
+        const originalFromDiffs = useMemo(() => {
+          if (!result.diffs) return '';
+          return result.diffs.filter(d => d.type !== 'insert').map(d => d.value).join('');
+        }, [result.diffs]);
+        originalTexts.push(originalFromDiffs);
+        console.log('🔥 UnifiedResultCard: Using originalFromDiffs:', originalFromDiffs);
+      }
+
+      // 发送清除命令
+      const payload = {
+        originalText: originalTexts.length === 1 ? originalTexts[0] : originalTexts
+      };
+      console.log('🔥 UnifiedResultCard: Sending clearDiagnostics command:', payload);
+
+      vscodeApi.postMessage({
+        command: 'clearDiagnostics',
+        payload: payload
+      } as any);
+
+      console.log('🔥 UnifiedResultCard: Message sent successfully');
+    } catch (e) {
+      console.error('🔥 UnifiedResultCard: clearDiagnostics failed:', e);
+    }
     finalizeDismiss();
   };
 
@@ -70,8 +111,9 @@ export const UnifiedResultCard: FC<UnifiedResultCardProps> = ({ result, onDismis
               type: issue.type || 'TERMINOLOGY',
               title: issue.message,
               description: issue.message,
-              details: (issue as any).suggestion ? `建议：${(issue as any).suggestion}` : undefined,
-              severity: issue.severity || 'warning'
+              details: issue.suggestion ? `建议：${issue.suggestion}` : undefined,
+              severity: issue.severity || 'warning',
+              lineNumber: issue.range ? issue.range[0] + 1 : undefined  // range[0] 应该是行号，+1 转换为 1-based
             })) :
             [{ id: 'no-issues', type: 'success', title: '检查完成，未发现问题', description: '检查完成，未发现问题', details: '文本符合规范，无需修改', severity: 'info' }]
           }

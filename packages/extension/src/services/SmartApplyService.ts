@@ -62,27 +62,39 @@ export class SmartApplyService {
    * 尝试精确匹配
    */
   private static async tryExactMatch(
-    editor: vscode.TextEditor, 
-    originalText: string, 
+    editor: vscode.TextEditor,
+    originalText: string,
     newText: string
   ): Promise<{ success: boolean; message?: string }> {
-    
+
     const documentText = editor.document.getText();
-    const originalIndex = documentText.indexOf(originalText);
 
-    if (originalIndex !== -1) {
-      const startPos = editor.document.positionAt(originalIndex);
-      const endPos = editor.document.positionAt(originalIndex + originalText.length);
-      const range = new vscode.Range(startPos, endPos);
+    // 尝试多种匹配方式：原始文本、去除前后空格、标准化空白符
+    const matchCandidates = [
+      originalText,
+      originalText.trim(),
+      originalText.replace(/\s+/g, ' ').trim(),
+      originalText.replace(/^\s+|\s+$/g, '') // 只去除前后空格，保留中间空白符
+    ];
 
-      const success = await editor.edit(editBuilder => {
-        editBuilder.replace(range, newText);
-      });
+    for (const candidate of matchCandidates) {
+      const originalIndex = documentText.indexOf(candidate);
+      if (originalIndex !== -1) {
+        const startPos = editor.document.positionAt(originalIndex);
+        const endPos = editor.document.positionAt(originalIndex + candidate.length);
+        const range = new vscode.Range(startPos, endPos);
 
-      return { 
-        success, 
-        message: success ? '已精确匹配并应用建议' : '精确匹配失败' 
-      };
+        const success = await editor.edit(editBuilder => {
+          editBuilder.replace(range, newText);
+        });
+
+        if (success) {
+          return {
+            success: true,
+            message: `已精确匹配并应用建议 (使用${candidate === originalText ? '原始' : '处理后的'}文本)`
+          };
+        }
+      }
     }
 
     return { success: false };

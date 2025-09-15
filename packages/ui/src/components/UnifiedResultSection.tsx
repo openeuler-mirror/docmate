@@ -8,6 +8,7 @@ interface ResultItem {
   details?: string;
   severity?: 'error' | 'warning' | 'info';
   icon?: string;
+  lineNumber?: number;
 }
 
 interface UnifiedResultSectionProps {
@@ -101,7 +102,19 @@ export function UnifiedResultSection({
         <span className="section-title">{title} ({items.length})</span>
         <span className="spacer" />
         <style>
-          {`.section-header{display:flex;align-items:center;gap:8px}.section-header .spacer{flex:1}`}
+          {`
+            .section-header{display:flex;align-items:center;gap:8px}
+            .section-header .spacer{flex:1}
+            .item-line-number {
+              background-color: #e0e0e0;
+              color: #666;
+              padding: 2px 6px;
+              border-radius: 4px;
+              font-size: 0.8em;
+              margin-left: 8px;
+              font-weight: 500;
+            }
+          `}
         </style>
         <span className="expand-icon" style={{ marginLeft: 'auto' }}>{sectionExpanded ? '▼' : '▶'}</span>
       </div>
@@ -118,6 +131,11 @@ export function UnifiedResultSection({
                   {item.severity ? getSeverityIcon(item.severity) : getTypeIcon(item.type)}
                 </span>
                 <span className="item-title">{item.title}</span>
+                {item.lineNumber && (
+                  <span className="item-line-number">
+                    行 {item.lineNumber}
+                  </span>
+                )}
                 <span className="expand-icon">
                   {expandedItems.has(item.id) ? '▼' : '▶'}
                 </span>

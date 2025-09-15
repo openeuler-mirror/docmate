@@ -781,7 +781,9 @@ export class FrontendAIService {
             severity: issue.severity || 'info',
             message: issue.message || '',
             suggestion: issue.suggestion || '',
-            range: [issue.start || 0, issue.end || 0] as [number, number]
+            range: [issue.start || 0, issue.end || 0] as [number, number],
+            original_text: issue.original_text || '',
+            suggested_text: issue.suggested_text || issue.suggestion || ''
           }));
           summary = `发现 ${issues?.length || 0} 个问题。`;
           break;

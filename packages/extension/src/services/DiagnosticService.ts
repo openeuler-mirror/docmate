@@ -91,6 +91,79 @@ export class DiagnosticService {
   }
 
   /**
+   * 清除特定诊断信息（基于原始文本）
+   * @param uri 文档URI
+   * @param originalText 原始文本
+   */
+  public static clearSpecificDiagnostics(uri: vscode.Uri, originalText: string): void {
+    if (!this.diagnosticCollection) {
+      return;
+    }
+
+    const currentDiagnostics = this.diagnosticCollection.get(uri) || [];
+    if (currentDiagnostics.length === 0) {
+      return;
+    }
+
+    console.log(`clearSpecificDiagnostics: Looking for diagnostics matching: "${originalText.substring(0, 50)}..."`);
+    console.log(`clearSpecificDiagnostics: Found ${currentDiagnostics.length} total diagnostics`);
+
+    // 过滤出需要保留的诊断信息
+    const filteredDiagnostics = currentDiagnostics.filter(diagnostic => {
+      const data = (diagnostic as any).data;
+      if (!data || !data.original_text) {
+        console.log(`clearSpecificDiagnostics: Keeping diagnostic without data`);
+        return true; // 保留没有数据的诊断
+      }
+
+      console.log(`clearSpecificDiagnostics: Comparing with diagnostic data: "${data.original_text.substring(0, 50)}..."`);
+
+      // 使用多种匹配策略
+      const isMatch = this.isTextMatch(data.original_text, originalText);
+      if (isMatch) {
+        console.log(`clearSpecificDiagnostics: Removing matching diagnostic`);
+        return false; // 移除匹配的诊断
+      }
+
+      console.log(`clearSpecificDiagnostics: Keeping non-matching diagnostic`);
+      return true; // 保留不匹配的诊断
+    });
+
+    // 重新设置过滤后的诊断信息
+    this.diagnosticCollection.set(uri, filteredDiagnostics);
+    console.log(`clearSpecificDiagnostics: Cleared ${currentDiagnostics.length - filteredDiagnostics.length} diagnostics, ${filteredDiagnostics.length} remaining`);
+  }
+
+  /**
+   * 检查两个文本是否匹配（使用多种匹配策略）
+   */
+  private static isTextMatch(text1: string, text2: string): boolean {
+    // 完全匹配
+    if (text1 === text2) {
+      return true;
+    }
+
+    // 去除前后空格后匹配
+    if (text1.trim() === text2.trim()) {
+      return true;
+    }
+
+    // 标准化空白符后匹配
+    const normalized1 = text1.replace(/\s+/g, ' ').trim();
+    const normalized2 = text2.replace(/\s+/g, ' ').trim();
+    if (normalized1 === normalized2) {
+      return true;
+    }
+
+    // 部分匹配（如果一个文本包含另一个）
+    if (text1.includes(text2) || text2.includes(text1)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * 注册快速修复命令
    */
   public static registerQuickFixCommands(): void {
@@ -144,17 +217,7 @@ export class DiagnosticService {
         throw ErrorHandlingService.createError(ErrorCode.UNKNOWN_ERROR, 'Invalid range');
       }
 
-      // 尝试直接替换
-      const success = await editor.edit(editBuilder => {
-        editBuilder.replace(range, data.suggested_text);
-      });
-
-      if (success) {
-        vscode.window.showInformationMessage('已应用修复建议');
-        return;
-      }
-
-      // 如果直接替换失败，尝试智能匹配
+      // 优先使用智能匹配，避免整行替换
       const smartResult = await SmartApplyService.applyTextSuggestion(
         data.suggested_text,
         data.original_text,
@@ -163,6 +226,25 @@ export class DiagnosticService {
 
       if (smartResult.success) {
         vscode.window.showInformationMessage(`已应用修复建议（${smartResult.message}）`);
+        // 应用成功后清除相关的波浪线
+        if (data.original_text) {
+          this.clearSpecificDiagnostics(uri, data.original_text);
+        }
+        return;
+      }
+
+      // 如果智能匹配失败，才尝试直接替换range（作为最后的备选方案）
+      console.warn('Smart apply failed, falling back to direct range replacement');
+      const success = await editor.edit(editBuilder => {
+        editBuilder.replace(range, data.suggested_text);
+      });
+
+      if (success) {
+        vscode.window.showInformationMessage('已应用修复建议（直接替换）');
+        // 应用成功后清除相关的波浪线
+        if (data.original_text) {
+          this.clearSpecificDiagnostics(uri, data.original_text);
+        }
       } else {
         throw ErrorHandlingService.createError(ErrorCode.UNKNOWN_ERROR, '无法应用修复建议');
       }

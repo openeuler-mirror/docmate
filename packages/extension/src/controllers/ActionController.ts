@@ -183,6 +183,10 @@ export class ActionController {
           console.log('ActionController: Executing cancel command');
           result = await this.handleCancel();
           break;
+        case 'clearDiagnostics':
+          console.log('ActionController: Executing clearDiagnostics command');
+          result = await this.handleClearDiagnostics(payload);
+          break;
         default:
           throw ErrorHandlingService.createError(ErrorCode.UNKNOWN_COMMAND, `Unknown command: ${command}`);
       }
@@ -271,19 +275,36 @@ export class ActionController {
         console.log('ActionController: Showing v1.2 diagnostics for', result.issues.length, 'issues');
 
         // 将issues转换为DiagnosticInfo格式
-        const diagnostics = result.issues.map(issue => ({
-          range: {
-            start: { line: issue.range[0] || 0, character: 0 },
-            end: { line: issue.range[1] || (issue.range[0] || 0), character: 100 }
-          },
-          message: issue.message,
-          severity: issue.severity,
-          source: 'DocMate',
-          code: issue.type,
-          original_text: issue.original_text || '',
-          suggested_text: issue.suggested_text || '',
-          suggestion_type: issue.type
-        }));
+        const diagnostics = result.issues.map(issue => {
+          const startLine = issue.range[0] || 0;
+          const endLine = issue.range[1] || startLine;
+
+          // 如果 issue 中没有 original_text，从文档中提取
+          let originalText = issue.original_text || '';
+          if (!originalText && editor) {
+            try {
+              const lineText = editor.document.lineAt(startLine).text;
+              // 尝试从消息中推断问题文本，或者使用整行文本
+              originalText = lineText;
+            } catch (e) {
+              console.warn('Failed to extract original text from document:', e);
+            }
+          }
+
+          return {
+            range: {
+              start: { line: startLine, character: 0 },
+              end: { line: endLine, character: 100 }
+            },
+            message: issue.message,
+            severity: issue.severity,
+            source: 'DocMate',
+            code: issue.type,
+            original_text: originalText,
+            suggested_text: issue.suggested_text || '',
+            suggestion_type: issue.type
+          };
+        });
 
         console.log('ActionController: Processed diagnostics:', diagnostics);
         DiagnosticService.showDiagnostics(editor.document.uri, diagnostics);
@@ -836,6 +857,76 @@ export class ActionController {
         action: 'cancel',
         success: false,
         error: docMateError.message
+      };
+    }
+  }
+
+  private async handleClearDiagnostics(payload: any): Promise<any> {
+    console.log('ActionController: Handling clearDiagnostics command');
+    console.log('Clear diagnostics payload:', payload);
+
+    try {
+      const { originalText, resultId } = payload;
+
+      // 清除相关的诊断信息
+      const { DiagnosticService } = await import('../services/DiagnosticService.js');
+      const editor = vscode.window.activeTextEditor;
+
+      if (editor) {
+        // 获取当前文档的所有诊断信息
+        const currentDiagnostics = DiagnosticService.getDiagnosticStats(editor.document.uri);
+        console.log('Current diagnostics before clear:', currentDiagnostics);
+
+        if (currentDiagnostics.total > 0) {
+          // 处理数组形式的原始文本
+          if (Array.isArray(originalText)) {
+            console.log('ActionController: Clearing multiple diagnostics:', originalText);
+            originalText.forEach(text => {
+              if (text) {
+                DiagnosticService.clearSpecificDiagnostics(editor.document.uri, text);
+              }
+            });
+          } else if (originalText) {
+            // 单个原始文本
+            DiagnosticService.clearSpecificDiagnostics(editor.document.uri, originalText);
+            console.log('ActionController: Cleared specific diagnostics for text');
+          } else {
+            // 如果没有原始文本，清除所有诊断信息
+            DiagnosticService.clearDiagnostics(editor.document.uri);
+            console.log('ActionController: Cleared all diagnostics for document');
+          }
+
+          // 验证清除后的状态
+          const afterClearDiagnostics = DiagnosticService.getDiagnosticStats(editor.document.uri);
+          console.log('Diagnostics after clear:', afterClearDiagnostics);
+        }
+
+        // 标记为已处理
+        if (this.dismissedStateService && originalText) {
+          const fileUri = editor.document.uri.toString();
+          const textsToMark = Array.isArray(originalText) ? originalText : [originalText];
+          for (const text of textsToMark) {
+            if (text) {
+              await this.dismissedStateService.markDismissed(text, fileUri);
+            }
+          }
+          console.log('ActionController: Marked diagnostics as dismissed');
+        }
+      } else {
+        console.warn('ActionController: No active editor found for clearing diagnostics');
+      }
+
+      return {
+        action: 'cleared',
+        success: true,
+        message: '已清除相关波浪线'
+      };
+    } catch (error) {
+      console.error('ActionController: Error clearing diagnostics:', error);
+      return {
+        action: 'cleared',
+        success: false,
+        message: '清除波浪线失败'
       };
     }
   }
