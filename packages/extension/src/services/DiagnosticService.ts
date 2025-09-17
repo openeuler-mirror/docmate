@@ -58,7 +58,7 @@ export class DiagnosticService {
       }
 
       // 添加数据信息，用于快速修复
-      vscodeDiagnostic.data = {
+      (vscodeDiagnostic as any).data = {
         original_text: diagnostic.original_text,
         suggested_text: diagnostic.suggested_text,
         suggestion_type: diagnostic.suggestion_type
@@ -187,7 +187,8 @@ export class DiagnosticService {
   }
 
   /**
-   * 应用快速修复 - 简化版本
+   * 应用快速修复 - 重构为直接精准替换
+   * 直接使用LLM提供的original_text -> suggested_text映射
    */
   private static async applyQuickFix(
     uri: vscode.Uri,
@@ -200,17 +201,34 @@ export class DiagnosticService {
         throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor for this document');
       }
 
-      const data = diagnostic.data as any;
+      const data = (diagnostic as any).data;
       if (!data || !data.original_text || !data.suggested_text) {
         throw ErrorHandlingService.createError(ErrorCode.UNKNOWN_ERROR, 'Invalid diagnostic data');
       }
 
-      // 简单验证范围有效性
+      // 应用直接替换策略
+
+      // 验证范围有效性
       if (range.start.line < 0 || range.start.character < 0) {
         throw ErrorHandlingService.createError(ErrorCode.UNKNOWN_ERROR, 'Invalid range');
       }
 
-      // 优先使用智能匹配，避免整行替换
+      // 策略1: 直接使用range替换（主要方法）
+      const directReplaceSuccess = await this.applyDirectReplacement(
+        editor, range, data.suggested_text, data.original_text
+      );
+
+      if (directReplaceSuccess) {
+        vscode.window.showInformationMessage('已应用修复建议');
+        // 应用成功后清除相关的波浪线
+        if (data.original_text) {
+          this.clearSpecificDiagnostics(uri, data.original_text);
+        }
+        return;
+      }
+
+      // 策略2: 如果直接替换失败，尝试基于文本内容的智能匹配
+      console.log('Direct replacement failed, trying content-based matching...');
       const smartResult = await SmartApplyService.applyTextSuggestion(
         data.suggested_text,
         data.original_text,
@@ -226,26 +244,50 @@ export class DiagnosticService {
         return;
       }
 
-      // 如果智能匹配失败，才尝试直接替换range（作为最后的备选方案）
-      console.warn('Smart apply failed, falling back to direct range replacement');
-      const success = await editor.edit(editBuilder => {
-        editBuilder.replace(range, data.suggested_text);
-      });
-
-      if (success) {
-        vscode.window.showInformationMessage('已应用修复建议（直接替换）');
-        // 应用成功后清除相关的波浪线
-        if (data.original_text) {
-          this.clearSpecificDiagnostics(uri, data.original_text);
-        }
-      } else {
-        throw ErrorHandlingService.createError(ErrorCode.UNKNOWN_ERROR, '无法应用修复建议');
-      }
+      throw ErrorHandlingService.createError(ErrorCode.UNKNOWN_ERROR, '无法应用修复建议');
 
     } catch (error) {
       const docMateError = ErrorHandlingService.fromError(error, ErrorCode.UNKNOWN_ERROR);
       console.error('QuickFix: Error applying suggestion:', docMateError);
       vscode.window.showErrorMessage(`应用修复失败: ${docMateError.message}`);
+    }
+  }
+
+  /**
+   * 应用直接替换 - 使用精确的range和suggested_text
+   */
+  private static async applyDirectReplacement(
+    editor: vscode.TextEditor,
+    range: vscode.Range,
+    suggestedText: string,
+    originalText: string
+  ): Promise<boolean> {
+    try {
+      // 验证range中的文本是否与original_text匹配
+      const currentText = editor.document.getText(range);
+      if (currentText === originalText) {
+        const success = await editor.edit(editBuilder => {
+          editBuilder.replace(range, suggestedText);
+        });
+        return success;
+      }
+
+      // 尝试规范化匹配（处理空格差异）
+      const normalizedCurrent = currentText.replace(/\s+/g, ' ').trim();
+      const normalizedOriginal = originalText.replace(/\s+/g, ' ').trim();
+
+      if (normalizedCurrent === normalizedOriginal) {
+        const success = await editor.edit(editBuilder => {
+          editBuilder.replace(range, suggestedText);
+        });
+        return success;
+      }
+
+      return false;
+
+    } catch (error) {
+      console.error('Direct replacement error:', error);
+      return false;
     }
   }
 
@@ -322,7 +364,7 @@ class DocMateCodeActionProvider implements vscode.CodeActionProvider {
     const docMateDiagnostics = context.diagnostics.filter(d => d.source === 'DocMate');
 
     for (const diagnostic of docMateDiagnostics) {
-      const data = diagnostic.data as any;
+      const data = (diagnostic as any).data;
       if (data && data.suggested_text) {
         const action = new vscode.CodeAction(
           `修复: ${diagnostic.message}`,

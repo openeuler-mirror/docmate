@@ -725,7 +725,7 @@ export class ChunkerService {
            line.startsWith('-') ||            // 无序列表
            line.startsWith('*') ||            // 无序列表
            line.startsWith('+') ||            // 无序列表
-           line.match(/^\d+\./) ||            // 有序列表
+           !!line.match(/^\d+\./) ||            // 有序列表
            line.includes('|') && line.split('|').length >= 3 ||  // 表格
            line.match(/^\s*$/);               // 空行
   }
@@ -879,9 +879,9 @@ export class ChunkerService {
    * 判断是否为 Markdown 列表行
    */
   private static isMarkdownListLine(line: string): boolean {
-    return line.match(/^[-*+]\s/) ||
-           line.match(/^\d+\.\s/) ||
-           line.match(/^\[[x\s]\]\s/);
+    return !!line.match(/^[-*+]\s/) ||
+           !!line.match(/^\d+\.\s/) ||
+           !!line.match(/^\[[x\s]\]\s/);
   }
 
   /**

@@ -310,163 +310,89 @@ export class ValidationService {
   }
 
   /**
-   * 计算suggestion在文档中的精确位置（词级精度）- 修复重复文本定位问题
+   * 计算suggestion在文档中的精确位置 - 重构为真正的精准定位
+   * 核心思路：既然LLM已经提供了original_text，我们就应该精确找到它的位置
    */
   private static calculateSuggestionRange(
     suggestion: Suggestion,
     chunk: TextChunk,
-    suggestionIndex: number = 0  // 新增：suggestion在列表中的索引，用于处理重复文本
+    suggestionIndex: number = 0
   ): { start: { line: number; character: number }; end: { line: number; character: number } } {
 
-    console.log('\n=== calculateSuggestionRange Debug ===');
-    const chunkText = chunk.core_text;
+    // 精确计算suggestion在文档中的位置
+
     const searchText = suggestion.original_text;
+    const chunkText = chunk.core_text;
 
-    console.log('Chunk text length:', chunkText.length);
-    console.log('Chunk text:', JSON.stringify(chunkText));
-    console.log('Search text length:', searchText.length);
-    console.log('Search text:', JSON.stringify(searchText));
+    // 直接查找original_text在chunk中的精确位置
+    let searchIndex = chunkText.indexOf(searchText);
 
-    // 查找搜索文本在chunk中的位置 - 修复重复文本定位
-    let searchIndex = -1;
-
-    // 尝试1: 精确匹配 - 支持第N次出现
-    console.log('-> Trying exact match with occurrence support...');
-    searchIndex = this.findNthOccurrence(chunkText, searchText, suggestionIndex);
-    console.log(`-> Exact match result for occurrence ${suggestionIndex}:`, searchIndex);
-
-    // 尝试2: 移除多余空格后匹配
+    // 如果找不到，尝试规范化匹配（处理空格差异）
     if (searchIndex === -1) {
-      console.log('-> Trying normalized match...');
       const normalizedChunk = chunkText.replace(/\s+/g, ' ').trim();
       const normalizedSearch = searchText.replace(/\s+/g, ' ').trim();
-      console.log('-> Normalized chunk:', JSON.stringify(normalizedChunk));
-      console.log('-> Normalized search:', JSON.stringify(normalizedSearch));
-      searchIndex = normalizedChunk.indexOf(normalizedSearch);
-      console.log('-> Normalized match result:', searchIndex);
 
-      if (searchIndex !== -1) {
-        console.log('-> Mapping normalized position back to original...');
-        // 需要将规范化后的位置映射回原始文本
-        searchIndex = this.mapNormalizedPosition(chunkText, searchIndex);
-        console.log('-> Mapped position:', searchIndex);
+      if (normalizedChunk.includes(normalizedSearch)) {
+        searchIndex = this.findBestMatchPosition(chunkText, searchText);
       }
     }
 
-    // 尝试3: 忽略大小写匹配（英文文本）
-    if (searchIndex === -1 && searchText.match(/[a-zA-Z]/)) {
-      console.log('-> Trying case-insensitive match...');
-      searchIndex = chunkText.toLowerCase().indexOf(searchText.toLowerCase());
-      console.log('-> Case-insensitive match result:', searchIndex);
-    }
-
-    // 尝试4: 部分匹配（取原文本的核心部分）
-    if (searchIndex === -1 && searchText.length > 10) {
-      console.log('-> Trying partial match...');
-      const coreText = searchText.substring(0, Math.min(searchText.length, 30));
-      console.log('-> Core text for partial match:', JSON.stringify(coreText));
-      searchIndex = chunkText.indexOf(coreText);
-      console.log('-> Partial match result:', searchIndex);
-
-      if (searchIndex !== -1) {
-        console.log(`Using partial match for: "${searchText}" in chunk ${chunk.id}`);
-      }
-    }
-
-    // 尝试5: 单词级别模糊匹配
     if (searchIndex === -1) {
-      console.log('-> Trying fuzzy match...');
-      searchIndex = this.findFuzzyMatchPosition(chunkText, searchText);
-      console.log('-> Fuzzy match result:', searchIndex);
-    }
-
-    // 如果所有方法都失败，记录详细错误
-    if (searchIndex === -1) {
-      console.error('-> ALL MATCHING METHODS FAILED');
-      console.error('-> Search text:', JSON.stringify(searchText));
-      console.error('-> Chunk text:', JSON.stringify(chunkText));
-      console.error('-> Chunk text preview:', JSON.stringify(chunkText.substring(0, 100) + '...'));
       throw new Error(`Cannot locate text "${searchText}" in chunk ${chunk.id}`);
     }
 
-    console.log('-> Successfully found text at index:', searchIndex);
+    // 计算精确的range
+    const searchLength = searchText.length;
 
-    // 计算搜索文本的长度（考虑规范化）
-    let searchLength = searchText.length;
+    // 转换为文档位置
+    const range = this.convertIndexToRange(chunkText, searchIndex, searchLength, chunk.range);
 
-    // 修复：检查length是否为0或无效
-    if (searchLength <= 0) {
-      console.warn(`Invalid search length: ${searchLength} for text: "${searchText}"`);
-      throw new Error(`Invalid search length: ${searchLength}`);
-    }
+    console.log('-> Final precise range:', range);
 
-    if (searchIndex >= 0 && searchIndex + searchLength > chunkText.length) {
-      searchLength = chunkText.length - searchIndex;
-      if (searchLength <= 0) {
-        console.warn(`Adjusted search length is invalid: ${searchLength}`);
-        throw new Error(`Invalid adjusted search length: ${searchLength}`);
-      }
-    }
+    return range;
+  }
 
-    // 精确计算在chunk中的相对位置
-    const textBeforeMatch = chunkText.substring(0, searchIndex);
-    const linesBeforeMatch = textBeforeMatch.split('\n');
-    const lineOffset = linesBeforeMatch.length - 1;
-    const characterOffset = linesBeforeMatch[linesBeforeMatch.length - 1].length;
+  /**
+   * 将文本索引转换为VS Code Range
+   */
+  private static convertIndexToRange(
+    text: string,
+    startIndex: number,
+    length: number,
+    chunkRange: any
+  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
 
-    // 计算匹配文本的行跨度
-    let matchedText = chunkText.substring(searchIndex, searchIndex + searchLength);
-    let matchedLines = matchedText.split('\n');
-    let lineSpan = matchedLines.length - 1;
+    // 计算开始位置
+    const textBeforeStart = text.substring(0, startIndex);
+    const startLines = textBeforeStart.split('\n');
+    const startLineOffset = startLines.length - 1;
+    const startCharOffset = startLines[startLines.length - 1].length;
 
-    // 词级精度优化：如果匹配文本很长，尝试缩小到具体的问题词汇
-    if (matchedText.length > 10 && suggestion.type !== 'FORMATTING') {
-      const refinedRange = this.refineToWordLevel(matchedText, suggestion);
-      if (refinedRange) {
-        searchIndex += refinedRange.offset;
-        searchLength = refinedRange.length;
-        matchedText = refinedRange.text;
-        matchedLines = matchedText.split('\n');
-        lineSpan = matchedLines.length - 1;
-      }
-    }
+    // 计算结束位置
+    const endIndex = startIndex + length;
+    const textBeforeEnd = text.substring(0, endIndex);
+    const endLines = textBeforeEnd.split('\n');
+    const endLineOffset = endLines.length - 1;
+    const endCharOffset = endLines[endLines.length - 1].length;
 
-    // 映射到文档中的绝对位置
-    const startLine = chunk.range.start.line + lineOffset;
-    const endLine = startLine + lineSpan;
+    // 映射到文档绝对位置
+    const startLine = chunkRange.start.line + startLineOffset;
+    const endLine = chunkRange.start.line + endLineOffset;
 
     let startCharacter = 0;
     let endCharacter = 0;
 
-    if (lineOffset === 0) {
-      startCharacter = chunk.range.start.character + characterOffset;
+    if (startLineOffset === 0) {
+      startCharacter = chunkRange.start.character + startCharOffset;
     } else {
-      startCharacter = characterOffset;
+      startCharacter = startCharOffset;
     }
 
-    if (lineSpan === 0) {
-      // 修复：确保matchedLines[0]存在且有长度，避免endCharacter为0
-      const firstLineLength = matchedLines[0] ? matchedLines[0].length : 0;
-      endCharacter = startCharacter + Math.max(firstLineLength, 1); // 确保至少长度为1
+    if (endLineOffset === 0) {
+      endCharacter = chunkRange.start.character + endCharOffset;
     } else {
-      // 修复：确保matchedLines[matchedLines.length - 1]存在且有长度
-      const lastLineLength = matchedLines[matchedLines.length - 1] ? matchedLines[matchedLines.length - 1].length : 0;
-      endCharacter = Math.max(lastLineLength, 1); // 确保至少长度为1
+      endCharacter = endCharOffset;
     }
-
-    // 验证计算的范围是否有效
-    if (startLine < 0 || startCharacter < 0 || endLine < startLine || (endLine === startLine && endCharacter <= startCharacter)) {
-      console.warn(`Invalid range calculated: start(${startLine}, ${startCharacter}), end(${endLine}, ${endCharacter})`);
-      console.warn(`Chunk range:`, chunk.range);
-      console.warn(`Search index: ${searchIndex}, length: ${searchLength}`);
-      // 返回chunk的起始位置作为fallback
-      return {
-        start: { line: chunk.range.start.line, character: chunk.range.start.character },
-        end: { line: chunk.range.start.line, character: chunk.range.start.character + 10 }
-      };
-    }
-
-    console.log(`Range calculated for "${searchText}": start(${startLine}, ${startCharacter}), end(${endLine}, ${endCharacter})`);
 
     return {
       start: { line: startLine, character: startCharacter },
@@ -475,102 +401,73 @@ export class ValidationService {
   }
 
   /**
-   * 将匹配范围精确到词级 - 简化版本
+   * 找到最佳匹配位置 - 简化的文本匹配
+   */
+  private static findBestMatchPosition(chunkText: string, searchText: string): number {
+    // 如果原始文本很短，直接搜索
+    if (searchText.length <= 20) {
+      return chunkText.indexOf(searchText);
+    }
+
+    // 对于长文本，寻找最相似的子串
+    const searchWords = searchText.split(/\s+/).filter(word => word.length > 1);
+    if (searchWords.length === 0) return -1;
+
+    // 寻找第一个关键词
+    const firstWord = searchWords[0];
+    const firstIndex = chunkText.indexOf(firstWord);
+
+    if (firstIndex !== -1) {
+      // 验证周围文本是否匹配
+      const contextStart = Math.max(0, firstIndex - 10);
+      const contextEnd = Math.min(chunkText.length, firstIndex + searchText.length + 10);
+      const context = chunkText.substring(contextStart, contextEnd);
+
+      if (context.includes(searchText.substring(0, Math.min(searchText.length, 30)))) {
+        return firstIndex;
+      }
+    }
+
+    return -1;
+  }
+
+  /**
+   * 将匹配范围精确到词级 - 大幅简化版本
+   * 对于大多数情况，直接使用original_text的完整范围
    */
   private static refineToWordLevel(
     matchedText: string,
     suggestion: Suggestion
   ): { offset: number; length: number; text: string } | null {
 
-    // 对于标点和空格问题，直接定位到问题字符
-    if (suggestion.type === 'PUNCTUATION' || suggestion.type === 'SPACING') {
-      return this.findPunctuationOrSpacingRange(matchedText);
-    }
+    // 关键洞察：LLM提供的original_text通常已经是精确的问题文本
+    // 我们不需要进一步优化范围，直接使用完整范围即可
 
-    // 对于术语问题，尝试精确匹配
-    if (suggestion.type === 'TERMINOLOGY') {
-      const termIndex = matchedText.indexOf(suggestion.original_text);
-      if (termIndex !== -1) {
+    // 只有对于特别长的文本，才考虑缩小范围
+    if (matchedText.length > 50) {
+      // 对于长文本，尝试找到最相关的核心部分
+      const searchText = suggestion.original_text;
+      const coreIndex = matchedText.indexOf(searchText);
+
+      if (coreIndex !== -1 && searchText.length < matchedText.length) {
         return {
-          offset: termIndex,
-          length: suggestion.original_text.length,
-          text: suggestion.original_text
+          offset: coreIndex,
+          length: searchText.length,
+          text: searchText
         };
       }
     }
 
-    // 对于错别字和其他问题，找到最小的有意义的词汇单元
-    return this.findMinimalWordUnit(matchedText);
-  }
-
-  /**
-   * 找到标点或空格问题的精确位置 - 简化版本
-   */
-  private static findPunctuationOrSpacingRange(
-    text: string
-  ): { offset: number; length: number; text: string } | null {
-
-    // 查找中文标点符号
-    const chinesePunctuationRegex = /[\u3000-\u303F\uFF00-\uFFEF]/g;
-    const punctuationMatch = chinesePunctuationRegex.exec(text);
-    if (punctuationMatch) {
-      return {
-        offset: punctuationMatch.index,
-        length: punctuationMatch[0].length,
-        text: punctuationMatch[0]
-      };
-    }
-
-    // 查找连续的空格
-    const multipleSpacesRegex = /\s{2,}/g;
-    const spaceMatch = multipleSpacesRegex.exec(text);
-    if (spaceMatch) {
-      return {
-        offset: spaceMatch.index,
-        length: spaceMatch[0].length,
-        text: spaceMatch[0]
-      };
-    }
-
-    return null;
-  }
-
-  /**
-   * 找到最小的有意义的词汇单元 - 简化版本
-   */
-  private static findMinimalWordUnit(
-    text: string
-  ): { offset: number; length: number; text: string } | null {
-
-    // 如果文本很短（少于15个字符），直接返回
-    if (text.length <= 15) {
-      return {
-        offset: 0,
-        length: text.length,
-        text: text
-      };
-    }
-
-    // 尝试找到单个词汇（2-10个字符）
-    const words = text.split(/\s+/);
-    for (const word of words) {
-      if (word.length >= 2 && word.length <= 10) {
-        const offset = text.indexOf(word);
-        return {
-          offset,
-          length: word.length,
-          text: word
-        };
-      }
-    }
-
-    // 如果没有合适的词汇，返回前10个字符
+    // 默认情况下，使用完整范围
     return {
       offset: 0,
-      length: Math.min(10, text.length),
-      text: text.substring(0, Math.min(10, text.length))
+      length: matchedText.length,
+      text: matchedText
     };
   }
+
+  // findPunctuationOrSpacingRange 和 findMinimalWordUnit 方法已移除
+// 新的简化策略直接使用LLM提供的original_text作为替换范围
 
   /**
    * 查找文本中第N次出现的位置 - 支持重复文本定位
@@ -595,322 +492,7 @@ export class ValidationService {
     return index;
   }
 
-  /**
-   * 查找最小的有意义的文本单元
-   */
-  private static findMinimalMeaningfulUnit(
-    text: string
-  ): { offset: number; length: number; text: string } | null {
-
-    // 优先匹配单个词汇
-    const words = text.split(/\s+/);
-    if (words.length > 1) {
-      // 返回第一个长度适中的词汇
-      for (const word of words) {
-        if (word.length >= 2 && word.length <= 10) {
-          const offset = text.indexOf(word);
-          return {
-            offset,
-            length: word.length,
-            text: word
-          };
-        }
-      }
-    }
-
-    // 如果没有合适的词汇，返回前10个字符
-    if (text.length > 10) {
-      return {
-        offset: 0,
-        length: 10,
-        text: text.substring(0, 10)
-      };
-    }
-
-    return null;
-  }
-
-  /**
-   * 比较两个文本，找到差异部分
-   */
-  private static findTextDifference(
-    text1: string,
-    text2: string
-  ): { offset: number; length: number; text: string } | null {
-
-    const minLength = Math.min(text1.length, text2.length);
-    let startDiff = 0;
-    let endDiff = 0;
-
-    // 找到开始差异的位置
-    while (startDiff < minLength && text1[startDiff] === text2[startDiff]) {
-      startDiff++;
-    }
-
-    // 找到结束差异的位置
-    while (endDiff < minLength - startDiff &&
-           text1[text1.length - 1 - endDiff] === text2[text2.length - 1 - endDiff]) {
-      endDiff++;
-    }
-
-    const diffLength = text1.length - startDiff - endDiff;
-    if (diffLength > 0) {
-      return {
-        offset: startDiff,
-        length: diffLength,
-        text: text1.substring(startDiff, startDiff + diffLength)
-      };
-    }
-
-    return null;
-  }
-
-  /**
-   * 查找模糊匹配位置
-   */
-  private static findFuzzyMatchPosition(chunkText: string, searchText: string): number {
-    // 如果搜索文本太短，不进行模糊匹配
-    if (searchText.length < 5) {
-      return -1;
-    }
-
-    const chunkWords = chunkText.split(/\s+/);
-    const searchWords = searchText.split(/\s+/);
-
-    // 如果搜索文本只有一个词，直接查找包含这个词的位置
-    if (searchWords.length === 1) {
-      const word = searchWords[0];
-      if (word.length >= 3) {
-        for (let i = 0; i < chunkWords.length; i++) {
-          if (chunkWords[i].includes(word) || word.includes(chunkWords[i])) {
-            // 计算这个词在原始文本中的位置
-            let position = 0;
-            for (let j = 0; j < i; j++) {
-              position += chunkWords[j].length + 1; // +1 for space
-            }
-            return position;
-          }
-        }
-      }
-      return -1;
-    }
-
-    // 多词匹配：寻找连续的词序列
-    let bestMatchIndex = -1;
-    let bestMatchScore = 0;
-
-    for (let i = 0; i <= chunkWords.length - searchWords.length; i++) {
-      let matchScore = 0;
-      for (let j = 0; j < searchWords.length; j++) {
-        const chunkWord = chunkWords[i + j];
-        const searchWord = searchWords[j];
-
-        if (chunkWord === searchWord) {
-          matchScore += 3; // 完全匹配得分最高
-        } else if (chunkWord.includes(searchWord) || searchWord.includes(chunkWord)) {
-          matchScore += 2; // 包含匹配
-        } else if (chunkWord.toLowerCase() === searchWord.toLowerCase()) {
-          matchScore += 2; // 大小写不敏感匹配
-        } else if (chunkWord.toLowerCase().includes(searchWord.toLowerCase()) ||
-                   searchWord.toLowerCase().includes(chunkWord.toLowerCase())) {
-          matchScore += 1; // 包含且大小写不敏感匹配
-        }
-      }
-
-      if (matchScore > bestMatchScore && matchScore >= searchWords.length * 1.5) {
-        bestMatchScore = matchScore;
-        // 计算匹配起始位置
-        let position = 0;
-        for (let j = 0; j < i; j++) {
-          position += chunkWords[j].length + 1;
-        }
-        bestMatchIndex = position;
-      }
-    }
-
-    if (bestMatchIndex !== -1) {
-      console.log(`Fuzzy match found for "${searchText}" with score ${bestMatchScore}`);
-    }
-
-    return bestMatchIndex;
-  }
-
-  /**
-   * 将规范化后的位置映射回原始文本位置
-   */
-  private static mapNormalizedPosition(originalText: string, normalizedIndex: number): number {
-    let originalIndex = 0;
-    let normalizedIndexCounter = 0;
-
-    while (originalIndex < originalText.length && normalizedIndexCounter < normalizedIndex) {
-      const char = originalText[originalIndex];
-
-      if (char === ' ' || char === '\t' || char === '\n') {
-        // 跳过空白字符，规范化时这些都被替换为单个空格
-        normalizedIndexCounter += 0; // 空白字符在规范化时被压缩
-      } else {
-        normalizedIndexCounter++;
-      }
-
-      originalIndex++;
-    }
-
-    return originalIndex;
-  }
-
-  /**
-   * 计算智能回退位置 - 当精确位置计算失败时的智能回退策略
-   */
-  private static calculateFallbackRange(
-    suggestion: Suggestion,
-    chunk: TextChunk,
-    suggestionIndex: number = 0
-  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
-
-    console.log(`-> calculateFallbackRange for suggestion "${suggestion.original_text}" in chunk ${chunk.id}`);
-
-    // 根据suggestion类型采用不同的回退策略
-    switch (suggestion.type) {
-      case 'PUNCTUATION':
-      case 'SPACING':
-        // 标点和空格问题：在chunk中查找相似的标点符号
-        return this.findPunctuationFallbackRange(chunk.core_text, chunk.range, suggestion);
-
-      case 'TERMINOLOGY':
-        // 术语问题：查找术语出现的所有可能位置
-        return this.findTerminologyFallbackRange(chunk.core_text, chunk.range, suggestion, suggestionIndex);
-
-      case 'TYPO':
-        // 错别字问题：基于文本长度估算位置
-        return this.findTypoFallbackRange(chunk.core_text, chunk.range, suggestion, suggestionIndex);
-
-      default:
-        // 通用回退策略：按suggestion索引均匀分布
-        return this.generateDistributedFallbackRange(chunk.core_text, chunk.range, suggestionIndex);
-    }
-  }
-
-  /**
-   * 标点符号回退策略
-   */
-  private static findPunctuationFallbackRange(
-    chunkText: string,
-    chunkRange: any,
-    suggestion: Suggestion
-  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
-
-    // 查找中文标点符号
-    const punctuationRegex = /[\u3000-\u303F\uFF00-\uFFEF]/g;
-    const matches = Array.from(chunkText.matchAll(punctuationRegex));
-
-    if (matches.length > 0) {
-      const match = matches[0]; // 使用第一个匹配的标点
-      const relativePos = match.index!;
-      return this.convertRelativePositionToAbsolute(chunkText, chunkRange, relativePos, 1);
-    }
-
-    // 如果没找到标点，返回chunk开始位置
-    return {
-      start: { line: chunkRange.start.line, character: chunkRange.start.character },
-      end: { line: chunkRange.start.line, character: chunkRange.start.character + 1 }
-    };
-  }
-
-  /**
-   * 术语回退策略
-   */
-  private static findTerminologyFallbackRange(
-    chunkText: string,
-    chunkRange: any,
-    suggestion: Suggestion,
-    suggestionIndex: number
-  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
-
-    // 尝试找到suggestion中的关键词
-    const keywords = suggestion.original_text.split(/\s+/).filter(word => word.length > 1);
-
-    for (const keyword of keywords) {
-      const occurrences = this.countOccurrences(chunkText, keyword);
-      if (occurrences > suggestionIndex) {
-        const position = this.findNthOccurrence(chunkText, keyword, suggestionIndex);
-        if (position !== -1) {
-          return this.convertRelativePositionToAbsolute(chunkText, chunkRange, position, keyword.length);
-        }
-      }
-    }
-
-    // 回退到分布式定位
-    return this.generateDistributedFallbackRange(chunkText, chunkRange, suggestionIndex);
-  }
-
-  /**
-   * 错别字回退策略
-   */
-  private static findTypoFallbackRange(
-    chunkText: string,
-    chunkRange: any,
-    suggestion: Suggestion,
-    suggestionIndex: number
-  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
-
-    // 对于错别字，基于文本长度按比例分布
-    const totalLength = chunkText.length;
-    const segmentSize = Math.max(10, Math.floor(totalLength / Math.max(1, suggestionIndex + 1)));
-    const position = Math.min(suggestionIndex * segmentSize, totalLength - suggestion.original_text.length);
-
-    return this.convertRelativePositionToAbsolute(chunkText, chunkRange, position, suggestion.original_text.length);
-  }
-
-  /**
-   * 通用分布式回退策略
-   */
-  private static generateDistributedFallbackRange(
-    chunkText: string,
-    chunkRange: any,
-    suggestionIndex: number
-  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
-
-    // 将chunk分成若干段，每段放置一个suggestion
-    const totalLength = chunkText.length;
-    const estimatedSuggestionCount = suggestionIndex + 1;
-    const segmentSize = Math.max(20, Math.floor(totalLength / estimatedSuggestionCount));
-    const position = Math.min(suggestionIndex * segmentSize, totalLength - 1);
-
-    return this.convertRelativePositionToAbsolute(chunkText, chunkRange, position, Math.min(10, totalLength - position));
-  }
-
-  /**
-   * 将相对位置转换为绝对位置
-   */
-  private static convertRelativePositionToAbsolute(
-    chunkText: string,
-    chunkRange: any,
-    relativePos: number,
-    length: number
-  ): { start: { line: number; character: number }; end: { line: number; character: number } } {
-
-    const textBeforeMatch = chunkText.substring(0, relativePos);
-    const linesBeforeMatch = textBeforeMatch.split('\n');
-    const lineOffset = linesBeforeMatch.length - 1;
-    const characterOffset = linesBeforeMatch[linesBeforeMatch.length - 1].length;
-
-    const startLine = chunkRange.start.line + lineOffset;
-    const endLine = startLine;
-
-    let startCharacter = 0;
-    if (lineOffset === 0) {
-      startCharacter = chunkRange.start.character + characterOffset;
-    } else {
-      startCharacter = characterOffset;
-    }
-
-    const endCharacter = startCharacter + length;
-
-    return {
-      start: { line: startLine, character: startCharacter },
-      end: { line: endLine, character: endCharacter }
-    };
-  }
+  // 已移除复杂的模糊匹配和回退方法，改用简洁的直接定位策略
 
   /**
    * 统计文本中子串出现的次数
