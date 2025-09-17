@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@docmate/shared": "workspace:*",
-    "@docmate/utils": "workspace:*"
+    "@docmate/utils": "workspace:*",
+    "diff": "^8.0.2"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",

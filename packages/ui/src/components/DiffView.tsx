@@ -69,9 +69,45 @@ const DiffView: React.FC<DiffViewProps> = ({
   // 检查是否有实际的修改
   const hasChanges = stats.totalChanges > 0;
 
-  // 如果没有修改，不显示DiffView，让ResultCard处理无修改的显示
+  // 如果没有修改，显示无变化的提示
   if (!hasChanges) {
-    return null;
+    return (
+      <div className={`diff-view no-changes ${className}`}>
+        <div className="diff-header">
+          <div className="diff-title">
+            <h3>{title}</h3>
+          </div>
+          <div className="diff-stats">
+            <span className="stat-no-changes">✓ 无需修改</span>
+          </div>
+        </div>
+        <div className="diff-content">
+          <div className="diff-section">
+            <div className="diff-text unchanged-text">
+              <span className="diff-segment unchanged">{diffs[0]?.value || '文本内容'}</span>
+            </div>
+          </div>
+        </div>
+        {showActions && (
+          <div className="diff-actions">
+            <button
+              className="btn btn-accept"
+              onClick={() => onAccept(diffs[0]?.value || '')}
+              title="文本无需修改"
+            >
+              ✓ 确认
+            </button>
+            <button
+              className="btn btn-reject"
+              onClick={onReject}
+              title="拒绝建议"
+            >
+              ✗ 拒绝
+            </button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (

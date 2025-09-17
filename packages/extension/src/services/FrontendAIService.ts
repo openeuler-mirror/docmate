@@ -14,6 +14,7 @@ import {
 } from '../prompts';
 import { TerminologyService } from '@docmate/utils';
 import { ErrorHandlingService } from './ErrorHandlingService';
+import { diffWords } from 'diff';
 
 /**
  * 前端AI服务配置接口
@@ -976,171 +977,34 @@ export class FrontendAIService {
   }
 
   /**
-   * 计算文本差异 - 使用增强的精确diff算法
+   * 计算文本差异 - 使用diff库的高效算法
    */
   private calculateDiff(originalText: string, modifiedText: string): Diff[] {
     if (originalText === modifiedText) {
       return [{ type: 'equal', value: originalText }];
     }
 
-    // 检查原始文本是否以换行符结尾
-    const originalEndsWithNewline = originalText.endsWith('\n') || originalText.endsWith('\r\n');
-    const modifiedEndsWithNewline = modifiedText.endsWith('\n') || modifiedText.endsWith('\r\n');
+    // 使用diff库进行词级diff，支持中英混排
+    const wordDiff = diffWords(originalText, modifiedText);
 
-    // 先按行级进行 LCS 对齐，再对变更的行做词级 diff，提高可读性
-    let originalLines = originalText.split(/\r?\n/);
-    let modifiedLines = modifiedText.split(/\r?\n/);
-
-    // 如果文本以换行符结尾，split 会产生一个空字符串作为最后一个元素，需要移除
-    if (originalEndsWithNewline && originalLines[originalLines.length - 1] === '') {
-      originalLines = originalLines.slice(0, -1);
-    }
-    if (modifiedEndsWithNewline && modifiedLines[modifiedLines.length - 1] === '') {
-      modifiedLines = modifiedLines.slice(0, -1);
-    }
-
-    const lineDiffs = this.computeLineDiff(originalLines, modifiedLines);
-
-    // 将行级 diff 中的 equal 直接返回，将 insert/delete 的行再拆成词级 diff
-    const result: Diff[] = [];
-    for (let i = 0; i < lineDiffs.length; i++) {
-      const ld = lineDiffs[i];
-      const isLastLine = i === lineDiffs.length - 1;
-
-      if (ld.type === 'equal') {
-        // 对于最后一行，根据原始文本是否有换行符来决定是否添加换行符
-        const shouldAddNewline = !isLastLine || originalEndsWithNewline;
-        result.push({ type: 'equal', value: ld.value + (shouldAddNewline ? '\n' : '') });
-      } else if (ld.type === 'delete') {
-        // 对删除的行直接标记整行删除并保留换行
-        const shouldAddNewline = !isLastLine || originalEndsWithNewline;
-        result.push({ type: 'delete', value: ld.value + (shouldAddNewline ? '\n' : '') });
-      } else if (ld.type === 'insert') {
-        const shouldAddNewline = !isLastLine || modifiedEndsWithNewline;
-        result.push({ type: 'insert', value: ld.value + (shouldAddNewline ? '\n' : '') });
-      } else if (ld.type === 'replace') {
-        // 行内容有替换，做增强的词级 diff
-        const tokensA = this.tokenizeForDiff(ld.a);
-        const tokensB = this.tokenizeForDiff(ld.b);
-        const wordDiffs = this.computeWordDiff(tokensA, tokensB);
-        // 合并词级 diff
-        for (const wd of wordDiffs) {
-          result.push(wd);
-        }
-        // 行尾换行
-        const shouldAddNewline = !isLastLine || modifiedEndsWithNewline;
-        if (shouldAddNewline) {
-          result.push({ type: 'equal', value: '\n' });
-        }
+    // 转换为DocMate的Diff接口格式
+    const result: Diff[] = wordDiff.map(part => {
+      if (part.added) {
+        return { type: 'insert', value: part.value };
+      } else if (part.removed) {
+        return { type: 'delete', value: part.value };
+      } else {
+        return { type: 'equal', value: part.value };
       }
-    }
+    });
 
+    // 合并相邻的相同类型的diff以提高可读性
     return this.mergeDiffs(result);
   }
 
 
 
-  /**
-   * 增强的词级分词（支持中英混排）
-   */
-  private tokenizeForDiff(text: string): string[] {
-    // 使用正则表达式分割，支持中文、英文、数字、标点
-    const tokens = text.match(/[\u4e00-\u9fff]+|[a-zA-Z0-9]+|[^\u4e00-\u9fff\sa-zA-Z0-9]+|\s+/g) || [];
-    return tokens.filter(token => token.length > 0);
-  }
-
-  /**
-   * 计算单词级别的差异（LCS 编辑距离回溯，返回 insert/delete/equal 列表）
-   */
-  private computeWordDiff(original: string[], modified: string[]): any[] {
-    const dp: number[][] = [];
-    const m = original.length;
-    const n = modified.length;
-
-    // 初始化DP表
-    for (let i = 0; i <= m; i++) {
-      dp[i] = [];
-      for (let j = 0; j <= n; j++) {
-        if (i === 0) dp[i][j] = j;
-        else if (j === 0) dp[i][j] = i;
-        else if (original[i - 1] === modified[j - 1]) {
-          dp[i][j] = dp[i - 1][j - 1];
-        } else {
-          dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-        }
-      }
-    }
-
-    // 回溯构建diff
-    const diffs: any[] = [];
-    let i = m, j = n;
-
-    while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && original[i - 1] === modified[j - 1]) {
-        diffs.unshift({ type: 'equal', value: original[i - 1] });
-        i--; j--;
-      } else if (j > 0 && (i === 0 || dp[i][j - 1] <= dp[i - 1][j])) {
-        diffs.unshift({ type: 'insert', value: modified[j - 1] });
-        j--;
-      } else if (i > 0) {
-        diffs.unshift({ type: 'delete', value: original[i - 1] });
-        i--;
-      }
-    }
-
-    return diffs;
-  }
-
-  /**
-   * 行级 LCS diff，支持 equal/insert/delete/replace（replace 表示同一位置的行内容变化）
-   */
-  private computeLineDiff(a: string[], b: string[]): Array<any> {
-    const m = a.length;
-    const n = b.length;
-    const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-
-    for (let i = m - 1; i >= 0; i--) {
-      for (let j = n - 1; j >= 0; j--) {
-        if (a[i] === b[j]) dp[i][j] = 1 + dp[i + 1][j + 1];
-        else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
-      }
-    }
-
-    const res: any[] = [];
-    let i = 0, j = 0;
-    while (i < m && j < n) {
-      if (a[i] === b[j]) {
-        res.push({ type: 'equal', value: a[i] });
-        i++; j++;
-      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-        // a[i] 被删除
-        res.push({ type: 'delete', value: a[i] });
-        i++;
-      } else {
-        // b[j] 被插入
-        res.push({ type: 'insert', value: b[j] });
-        j++;
-      }
-    }
-    while (i < m) { res.push({ type: 'delete', value: a[i++] }); }
-    while (j < n) { res.push({ type: 'insert', value: b[j++] }); }
-
-    // 尝试将交替的 delete + insert 合并为 replace
-    const merged: any[] = [];
-    for (let k = 0; k < res.length; k++) {
-      const cur = res[k];
-      const next = res[k + 1];
-      if (cur && next && cur.type === 'delete' && next.type === 'insert') {
-        merged.push({ type: 'replace', a: cur.value, b: next.value });
-        k++; // 跳过 next
-      } else {
-        merged.push(cur);
-      }
-    }
-
-    return merged;
-  }
-
+  
 
   /**
    * 合并相邻的相同类型的diff

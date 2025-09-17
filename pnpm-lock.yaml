@@ -44,6 +44,9 @@ importers:
       '@docmate/utils':
         specifier: workspace:*
         version: link:../utils
+      diff:
+        specifier: ^8.0.2
+        version: 8.0.2
     devDependencies:
       '@types/glob':
         specifier: ^8.1.0
