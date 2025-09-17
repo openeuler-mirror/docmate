@@ -36,10 +36,42 @@ export const UnifiedResultCard: FC<UnifiedResultCardProps> = ({ result, onDismis
 
   const handleAccept = (suggestion: string) => {
     try {
+      // 发送应用建议命令
       vscodeApi.postMessage({
         command: 'applySuggestion',
         payload: { text: suggestion, originalText: originalFromDiffs }
       } as any);
+
+      // 发送清除波浪线命令
+      try {
+        // 获取所有 issues 的原始文本
+        const originalTexts: string[] = [];
+        if (result.issues && result.issues.length > 0) {
+          result.issues.forEach((issue: Issue) => {
+            if (issue.original_text) {
+              originalTexts.push(issue.original_text);
+            }
+          });
+        }
+
+        // 如果没有找到原始文本，使用从 diffs 计算的文本
+        if (originalTexts.length === 0 && originalFromDiffs) {
+          originalTexts.push(originalFromDiffs);
+        }
+
+        // 发送清除命令
+        const payload = {
+          originalText: originalTexts.length === 1 ? originalTexts[0] : originalTexts
+        };
+
+        vscodeApi.postMessage({
+          command: 'clearDiagnostics',
+          payload: payload
+        } as any);
+      } catch (e) {
+        console.error('UnifiedResultCard: clearDiagnostics failed in handleAccept:', e);
+      }
+
       finalizeDismiss();
     } catch (e) {
       console.error('UnifiedResultCard: applySuggestion failed', e);
@@ -49,16 +81,12 @@ export const UnifiedResultCard: FC<UnifiedResultCardProps> = ({ result, onDismis
   const handleReject = () => {
     // 清除相关的波浪线
     try {
-      console.log('🔥 UnifiedResultCard: handleReject called');
-      console.log('🔥 UnifiedResultCard: result.issues:', result.issues);
-
       // 获取所有 issues 的原始文本
       const originalTexts: string[] = [];
       if (result.issues && result.issues.length > 0) {
-        result.issues.forEach((issue: Issue, index: number) => {
+        result.issues.forEach((issue: Issue) => {
           if (issue.original_text) {
             originalTexts.push(issue.original_text);
-            console.log(`🔥 UnifiedResultCard: Issue ${index} original_text:`, issue.original_text);
           }
         });
       }
@@ -70,23 +98,19 @@ export const UnifiedResultCard: FC<UnifiedResultCardProps> = ({ result, onDismis
           return result.diffs.filter(d => d.type !== 'insert').map(d => d.value).join('');
         }, [result.diffs]);
         originalTexts.push(originalFromDiffs);
-        console.log('🔥 UnifiedResultCard: Using originalFromDiffs:', originalFromDiffs);
       }
 
       // 发送清除命令
       const payload = {
         originalText: originalTexts.length === 1 ? originalTexts[0] : originalTexts
       };
-      console.log('🔥 UnifiedResultCard: Sending clearDiagnostics command:', payload);
 
       vscodeApi.postMessage({
         command: 'clearDiagnostics',
         payload: payload
       } as any);
-
-      console.log('🔥 UnifiedResultCard: Message sent successfully');
     } catch (e) {
-      console.error('🔥 UnifiedResultCard: clearDiagnostics failed:', e);
+      console.error('UnifiedResultCard: clearDiagnostics failed:', e);
     }
     finalizeDismiss();
   };

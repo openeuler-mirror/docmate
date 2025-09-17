@@ -97,11 +97,13 @@ export class DiagnosticService {
    */
   public static clearSpecificDiagnostics(uri: vscode.Uri, originalText: string): void {
     if (!this.diagnosticCollection) {
+      console.warn('clearSpecificDiagnostics: Diagnostic service not initialized');
       return;
     }
 
     const currentDiagnostics = this.diagnosticCollection.get(uri) || [];
     if (currentDiagnostics.length === 0) {
+      console.log('clearSpecificDiagnostics: No diagnostics found for document');
       return;
     }
 
@@ -112,21 +114,12 @@ export class DiagnosticService {
     const filteredDiagnostics = currentDiagnostics.filter(diagnostic => {
       const data = (diagnostic as any).data;
       if (!data || !data.original_text) {
-        console.log(`clearSpecificDiagnostics: Keeping diagnostic without data`);
         return true; // 保留没有数据的诊断
       }
 
-      console.log(`clearSpecificDiagnostics: Comparing with diagnostic data: "${data.original_text.substring(0, 50)}..."`);
-
       // 使用多种匹配策略
       const isMatch = this.isTextMatch(data.original_text, originalText);
-      if (isMatch) {
-        console.log(`clearSpecificDiagnostics: Removing matching diagnostic`);
-        return false; // 移除匹配的诊断
-      }
-
-      console.log(`clearSpecificDiagnostics: Keeping non-matching diagnostic`);
-      return true; // 保留不匹配的诊断
+      return !isMatch; // 保留不匹配的诊断
     });
 
     // 重新设置过滤后的诊断信息

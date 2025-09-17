@@ -79,7 +79,7 @@ export function safeExecuteSync<T>(
  * 类型守卫：检查是否为UI命令
  */
 export function isUICommand(message: MessageType): message is UICommand {
-  return ['check', 'polish', 'translate', 'rewrite', 'applySuggestion', 'refresh', 'settings', 'auth', 'config'].includes(message.command);
+  return ['check', 'polish', 'translate', 'rewrite', 'applySuggestion', 'clearDiagnostics', 'refresh', 'settings', 'auth', 'config', 'cancel'].includes(message.command);
 }
 
 /**

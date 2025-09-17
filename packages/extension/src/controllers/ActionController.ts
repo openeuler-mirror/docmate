@@ -268,7 +268,7 @@ export class ActionController {
    */
   private async showV12Diagnostics(result: AIResult): Promise<void> {
     try {
-      const { DiagnosticService } = await import('../Services/DiagnosticService');
+      const { DiagnosticService } = await import('../services/DiagnosticService');
       const editor = vscode.window.activeTextEditor;
 
       if (editor && result.issues && result.issues.length > 0) {
@@ -478,6 +478,20 @@ export class ActionController {
       const result = await SmartApplyService.applyTextSuggestion(text, originalText);
 
       if (result.success) {
+        // 应用成功，清除所有DocMate波浪线
+        try {
+          const { DiagnosticService } = await import('../services/DiagnosticService');
+          const editor = vscode.window.activeTextEditor;
+
+          if (editor) {
+            console.log('ActionController: Clearing all DocMate diagnostics after applying suggestion');
+            DiagnosticService.clearDiagnostics(editor.document.uri);
+            console.log('ActionController: All diagnostics cleared successfully');
+          }
+        } catch (error) {
+          console.error('ActionController: Failed to clear diagnostics:', error);
+        }
+
         // 应用成功，标记为已处理
         if (this.dismissedStateService && originalText) {
           const editor = vscode.window.activeTextEditor;
@@ -862,46 +876,21 @@ export class ActionController {
   }
 
   private async handleClearDiagnostics(payload: any): Promise<any> {
-    console.log('ActionController: Handling clearDiagnostics command');
-    console.log('Clear diagnostics payload:', payload);
+    console.log('ActionController: Handling clearDiagnostics command - clearing all DocMate diagnostics');
 
     try {
-      const { originalText, resultId } = payload;
-
-      // 清除相关的诊断信息
-      const { DiagnosticService } = await import('../services/DiagnosticService.js');
+      // 清除所有DocMate插件的诊断信息
+      const { DiagnosticService } = await import('../services/DiagnosticService');
       const editor = vscode.window.activeTextEditor;
 
       if (editor) {
-        // 获取当前文档的所有诊断信息
-        const currentDiagnostics = DiagnosticService.getDiagnosticStats(editor.document.uri);
-        console.log('Current diagnostics before clear:', currentDiagnostics);
+        // 直接清除当前文档的所有诊断信息
+        console.log('ActionController: Clearing all DocMate diagnostics for document');
+        DiagnosticService.clearDiagnostics(editor.document.uri);
+        console.log('ActionController: All DocMate diagnostics cleared');
 
-        if (currentDiagnostics.total > 0) {
-          // 处理数组形式的原始文本
-          if (Array.isArray(originalText)) {
-            console.log('ActionController: Clearing multiple diagnostics:', originalText);
-            originalText.forEach(text => {
-              if (text) {
-                DiagnosticService.clearSpecificDiagnostics(editor.document.uri, text);
-              }
-            });
-          } else if (originalText) {
-            // 单个原始文本
-            DiagnosticService.clearSpecificDiagnostics(editor.document.uri, originalText);
-            console.log('ActionController: Cleared specific diagnostics for text');
-          } else {
-            // 如果没有原始文本，清除所有诊断信息
-            DiagnosticService.clearDiagnostics(editor.document.uri);
-            console.log('ActionController: Cleared all diagnostics for document');
-          }
-
-          // 验证清除后的状态
-          const afterClearDiagnostics = DiagnosticService.getDiagnosticStats(editor.document.uri);
-          console.log('Diagnostics after clear:', afterClearDiagnostics);
-        }
-
-        // 标记为已处理
+        // 标记为已处理（如果需要）
+        const { originalText } = payload;
         if (this.dismissedStateService && originalText) {
           const fileUri = editor.document.uri.toString();
           const textsToMark = Array.isArray(originalText) ? originalText : [originalText];
@@ -919,7 +908,7 @@ export class ActionController {
       return {
         action: 'cleared',
         success: true,
-        message: '已清除相关波浪线'
+        message: '已清除所有波浪线'
       };
     } catch (error) {
       console.error('ActionController: Error clearing diagnostics:', error);
