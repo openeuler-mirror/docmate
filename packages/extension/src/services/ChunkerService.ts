@@ -719,15 +719,17 @@ export class ChunkerService {
    * 判断是否为特殊格式行
    */
   private static isSpecialFormatLine(line: string): boolean {
-    return line.startsWith('#') ||           // 标题
-           line.startsWith('>') ||            // 引用
-           line.startsWith('```') ||          // 代码块标记
-           line.startsWith('-') ||            // 无序列表
-           line.startsWith('*') ||            // 无序列表
-           line.startsWith('+') ||            // 无序列表
-           !!line.match(/^\d+\./) ||            // 有序列表
-           line.includes('|') && line.split('|').length >= 3 ||  // 表格
-           line.match(/^\s*$/);               // 空行
+    return !!(
+      line.startsWith('#') ||           // 标题
+      line.startsWith('>') ||            // 引用
+      line.startsWith('```') ||          // 代码块标记
+      line.startsWith('-') ||            // 无序列表
+      line.startsWith('*') ||            // 无序列表
+      line.startsWith('+') ||            // 无序列表
+      !!line.match(/^\d+\./) ||            // 有序列表
+      line.includes('|') && line.split('|').length >= 3 ||  // 表格
+      line.match(/^\s*$/)                // 空行
+    );
   }
 
   /**

@@ -1,3 +1,4 @@
+import * as vscode from 'vscode';
 import {
   TextChunk,
   Suggestion,
@@ -289,8 +290,19 @@ export class ValidationService {
       console.log('-> Range calculated successfully:', range);
     } catch (error) {
       console.warn(`-> Failed to calculate range for suggestion in chunk ${chunk.id}:`, error);
-      // 使用智能回退策略而不是简单的chunk起始位置
-      range = this.calculateFallbackRange(suggestion, chunk, suggestionIndex);
+      // 使用简单的回退策略
+      const activeEditor = vscode.window.activeTextEditor;
+      if (activeEditor) {
+        range = new vscode.Range(
+          chunk.range.start.line,
+          0,
+          Math.min(chunk.range.start.line + 1, activeEditor.document.lineCount - 1),
+          0
+        );
+      } else {
+        // 如果没有活跃编辑器，使用chunk的原始范围
+        range = chunk.range;
+      }
       console.log(`-> Using fallback range for chunk ${chunk.id}:`, range);
     }
 

@@ -9,7 +9,7 @@ export type TextSource = 'selected' | 'full';
 
 // UI发往Host的命令接口
 export interface UICommand extends BaseCommand {
-  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'refresh' | 'settings' | 'auth' | 'config' | 'cancel';
+  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'clearDiagnostics' | 'refresh' | 'settings' | 'auth' | 'config' | 'cancel';
   payload: {
     text?: string;
     textSource?: TextSource;

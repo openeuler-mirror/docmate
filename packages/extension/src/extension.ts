@@ -1,21 +1,16 @@
 import * as vscode from 'vscode';
 import { SidebarProvider } from './SidebarProvider';
 import { TextSource } from '@docmate/shared';
-import { AuthService } from './services/AuthService';
 import { ErrorHandlingService } from './services/ErrorHandlingService';
 import { ErrorCode } from '@docmate/shared';
 import { userConfigService } from './services/UserConfigService';
-import { DiagnosticService } from './Services/DiagnosticService';
+import { DiagnosticService } from './services/DiagnosticService';
 
 export async function activate(context: vscode.ExtensionContext) {
   console.log('DocMate extension is now active!');
 
   // 初始化用户配置服务
   userConfigService.initialize(context);
-
-  // 初始化认证服务
-  const authService = AuthService.getInstance(context.secrets);
-  await authService.initialize();
 
   // 初始化v1.2诊断服务
   DiagnosticService.initialize(context);
@@ -24,7 +19,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // 创建侧边栏提供者
   const sidebarProvider = new SidebarProvider(context.extensionUri);
 
-  // 设置扩展上下文并初始化认证
+  // 设置扩展上下文并初始化
   await sidebarProvider.setContext(context);
 
   // 注册侧边栏视图
@@ -36,7 +31,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // 注册命令
-  registerCommands(context, sidebarProvider, authService);
+  registerCommands(context, sidebarProvider);
 
   // 监听配置变化
   context.subscriptions.push(
@@ -110,7 +105,7 @@ function executeTextOperation(
   }
 }
 
-function registerCommands(context: vscode.ExtensionContext, sidebarProvider: SidebarProvider, authService: AuthService) {
+function registerCommands(context: vscode.ExtensionContext, sidebarProvider: SidebarProvider) {
   // 检查文档命令
   const checkCommand = vscode.commands.registerCommand('docmate.check', () => {
     executeTextOperation(result => {
@@ -189,17 +184,7 @@ function registerCommands(context: vscode.ExtensionContext, sidebarProvider: Sid
     });
   });
 
-  // 登录命令（简化版）
-  const loginCommand = vscode.commands.registerCommand('docmate.login', async () => {
-    vscode.window.showInformationMessage('认证功能暂未实现，请直接配置AI服务使用');
-  });
-
-  // 登出命令（简化版）
-  const logoutCommand = vscode.commands.registerCommand('docmate.logout', async () => {
-    vscode.window.showInformationMessage('认证功能暂未实现');
-  });
-
-  context.subscriptions.push(checkCommand, polishCommand, translateCommand, rewriteCommand, loginCommand, logoutCommand);
+  context.subscriptions.push(checkCommand, polishCommand, translateCommand, rewriteCommand);
 }
 
 export function deactivate() {

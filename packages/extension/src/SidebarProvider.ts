@@ -16,11 +16,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 设置扩展上下文并初始化认证
+   * 设置扩展上下文并初始化
    */
   public async setContext(context: vscode.ExtensionContext): Promise<void> {
     this._context = context;
-    await this._actionController.initializeAuth(context.secrets, context);
+    await this._actionController.initialize(context);
+  }
+
+  /**
+   * 获取ActionController实例
+   */
+  public getActionController(): ActionController {
+    return this._actionController;
   }
 
   public resolveWebviewView(

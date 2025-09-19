@@ -4,7 +4,7 @@
 
 // 检查相关prompts
 export {
-  buildCheckPrompt,
+  buildSingleChunkPrompt,
 } from './checkPrompts';
 
 // 润色相关prompts

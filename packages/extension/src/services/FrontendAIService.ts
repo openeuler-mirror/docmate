@@ -7,7 +7,6 @@ import {
   ErrorCode
 } from '@docmate/shared';
 import {
-  buildCheckPrompt,
   buildPolishPrompt,
   buildTranslatePrompt,
   buildRewritePrompt
@@ -48,6 +47,13 @@ export class FrontendAIService {
   private terminologyService: TerminologyService;
   private abortController: AbortController | null = null;
 
+  /**
+   * 格式化错误信息的辅助方法
+   */
+  private formatErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
   constructor(config: FrontendAIConfig) {
     this.config = {
       enableStreaming: true,
@@ -67,22 +73,8 @@ export class FrontendAIService {
    * 检查文本 - v1.2新版结构化实现
    */
   async check(text: string, options: any = {}): Promise<AIResult> {
-    const {
-      enableGrammar = true,
-      enableStyle = true,
-      enableTerminology = true,
-      enableConsistency = true,
-      strictMode = false,
-      useV12Architecture = false  // 新增：是否使用v1.2架构
-    } = options;
-
-    if (useV12Architecture) {
-      // 使用v1.2新架构
-      return this.checkWithV12Architecture(text, options);
-    } else {
-      // 使用原有架构（保持向后兼容）
-      return this.checkWithLegacyArchitecture(text, options);
-    }
+    // 直接使用v1.2新架构
+    return this.checkWithV12Architecture(text, options);
   }
 
   /**
@@ -203,8 +195,8 @@ export class FrontendAIService {
           success: !result.error,
           processingTime: result.processingTime,
           suggestionsCount: result.llmResult.suggestions?.length || 0,
-          error: result.error ? result.error.message : null,
-          suggestions: result.llmResult.suggestions?.map(s => ({
+          error: result.error ? this.formatErrorMessage(result.error) : null,
+          suggestions: result.llmResult.suggestions?.map((s: any) => ({
             type: s.type,
             description: s.description,
             original_text: s.original_text,
@@ -266,42 +258,7 @@ export class FrontendAIService {
     }
   }
 
-  /**
-   * 使用原有架构进行文本检查（向后兼容）
-   */
-  private async checkWithLegacyArchitecture(text: string, options: any): Promise<AIResult> {
-    const {
-      enableGrammar = true,
-      enableStyle = true,
-      enableTerminology = true,
-      enableConsistency = true,
-      strictMode = false
-    } = options;
-
-    // 构建检查类型列表
-    const checkTypes: string[] = [];
-    if (enableGrammar) checkTypes.push('语法错误');
-    if (enableStyle) checkTypes.push('写作风格');
-    if (enableTerminology) checkTypes.push('术语使用');
-    if (enableConsistency) checkTypes.push('内容一致性');
-
-    const { buildCheckPrompt } = await import('../prompts/checkPrompts');
-    const prompt = buildCheckPrompt(text, checkTypes, strictMode);
-
-    try {
-      const aiResponse = await this.callAIService(prompt, [], this.getCheckToolOptions());
-      return this.parseAIResponse(aiResponse, 'check', text);
-    } catch (error) {
-      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
-      ErrorHandlingService.logError(docMateError, 'FrontendAIService.checkWithLegacyArchitecture');
-      throw ErrorHandlingService.createContextualError(
-        docMateError.code as ErrorCode,
-        `Text check failed: ${docMateError.message}`,
-        'FrontendAIService.checkWithLegacyArchitecture'
-      );
-    }
-  }
-
+  
   /**
    * 润色文本
    */
@@ -498,7 +455,7 @@ export class FrontendAIService {
               return { tool: first.function?.name, args };
             } catch (e) {
               console.error(`[${requestId}] Tool calling arguments parse error:`, e, 'Raw args:', argsStr);
-              throw ErrorHandlingService.createError(ErrorCode.TOOL_CALL_PARSE_ERROR, `Tool calling arguments JSON 解析失败: ${e instanceof Error ? e.message : String(e)}`);
+              throw ErrorHandlingService.createError(ErrorCode.TOOL_CALL_PARSE_ERROR, `Tool calling arguments JSON 解析失败: ${this.formatErrorMessage(e)}`);
             }
           }
 
@@ -837,7 +794,7 @@ export class FrontendAIService {
       // 不要返回"成功"的结果，而是抛出错误让上层处理
       throw ErrorHandlingService.createError(
         ErrorCode.RESPONSE_FORMAT_ERROR,
-        `解析AI响应失败: ${error instanceof Error ? error.message : String(error)}`
+        `解析AI响应失败: ${this.formatErrorMessage(error)}`
       );
     }
   }
@@ -1338,7 +1295,7 @@ export class FrontendAIService {
       console.error('Failed to parse structured AI response:', error, 'Raw response:', aiResponse);
       throw ErrorHandlingService.createError(
         ErrorCode.RESPONSE_FORMAT_ERROR,
-        `解析结构化AI响应失败: ${error instanceof Error ? error.message : String(error)}`
+        `解析结构化AI响应失败: ${this.formatErrorMessage(error)}`
       );
     }
   }

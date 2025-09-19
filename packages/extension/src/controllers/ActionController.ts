@@ -1,16 +1,13 @@
 import * as vscode from 'vscode';
 import {
-  TerminologyService,
-  configService
+  TerminologyService
 } from '@docmate/utils';
 import {
   AIServiceConfig,
   AIResult,
   ChatMessage,
-  createError,
   ErrorCode
 } from '@docmate/shared';
-import { AuthService, AuthStatus } from '../services/AuthService';
 import { FrontendAIService } from '../services/FrontendAIService';
 import { DismissedStateService } from '../services/DismissedStateService';
 import { ErrorHandlingService } from '../services/ErrorHandlingService';
@@ -19,7 +16,6 @@ import { userConfigService, UserAIConfig } from '../services/UserConfigService';
 
 export class ActionController {
   private terminologyService: TerminologyService;
-  private authService: AuthService | null = null;
   private frontendAIService: FrontendAIService | null = null;
   private dismissedStateService: DismissedStateService | null = null;
 
@@ -27,18 +23,14 @@ export class ActionController {
     // 初始化服务
     this.terminologyService = new TerminologyService();
 
-    // 初始化configService
+    // 初始化配置
     this.updateConfiguration();
   }
 
   /**
-   * 初始化认证服务
+   * 初始化服务
    */
-  public async initializeAuth(secretStorage: vscode.SecretStorage, context?: vscode.ExtensionContext): Promise<void> {
-    // 初始化认证服务（空实现）
-    this.authService = AuthService.getInstance(secretStorage);
-    await this.authService.initialize();
-
+  public async initialize(context?: vscode.ExtensionContext): Promise<void> {
     // 初始化前端AI服务
     await this.initializeFrontendAIService();
 
@@ -118,12 +110,12 @@ export class ActionController {
     }
 
     if (!this.frontendAIService) {
-      throw createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
+      throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
     }
 
     // 验证配置是否有效
     if (!this.frontendAIService.isConfigValid()) {
-      throw createError(
+      throw ErrorHandlingService.createError(
         ErrorCode.CONFIG_MISSING,
         'AI service is not configured. Please configure API Key, Base URL, and Model in settings.'
       );
@@ -168,16 +160,12 @@ export class ActionController {
           result = await this.handleRefresh(payload);
           break;
         case 'settings':
-          console.log('ActionController: Executing settings command');
-          result = await this.handleSettings(payload);
+          console.log('ActionController: Executing settings command (redirecting to config)');
+          result = await this.handleConfig(payload);
           break;
         case 'config':
           console.log('ActionController: Executing config command');
           result = await this.handleConfig(payload);
-          break;
-        case 'auth':
-          console.log('ActionController: Executing auth command');
-          result = await this.handleAuth(payload);
           break;
         case 'cancel':
           console.log('ActionController: Executing cancel command');
@@ -202,18 +190,7 @@ export class ActionController {
     }
   }
 
-  /**
-   * 检查认证状态（简化版）
-   */
-  private async ensureAuthenticated(): Promise<boolean> {
-    if (!this.authService) {
-      throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Authentication service not initialized');
-    }
-
-    // 简化的认证逻辑：总是返回true，认证功能留待后续实现
-    return true;
-  }
-
+  
   /**
    * 处理检查命令 - 支持v1.2架构
    */
@@ -244,21 +221,14 @@ export class ActionController {
     // 确保AI服务已准备就绪
     await this.ensureAIServiceReady();
 
-    // 检查是否启用v1.2架构
-    const config = vscode.workspace.getConfiguration('docmate');
-    const useV12Architecture = config.get('experimental.v12Architecture', false);
-
-    // 使用前端AI服务，传递架构选项
+    // 直接使用v1.2架构
     const result = await this.frontendAIService!.check(text, {
       ...options,
-      textSource,
-      useV12Architecture
+      textSource
     });
 
-    // 如果使用v1.2架构，显示诊断信息
-    if (useV12Architecture) {
-      await this.showV12Diagnostics(result);
-    }
+    // 显示诊断信息
+    await this.showV12Diagnostics(result);
 
     return result;
   }
@@ -370,7 +340,7 @@ export class ActionController {
     if (!text || !text.trim()) {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        throw createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
+        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
       }
       finalText = editor.document.getText();
       textSource = 'full';
@@ -382,27 +352,22 @@ export class ActionController {
       if (editor) {
         finalText = editor.document.getText();
       } else {
-        throw createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found for full document translation');
+        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found for full document translation');
       }
     }
 
     if (!finalText || typeof finalText !== 'string' || !finalText.trim()) {
-      throw createError(ErrorCode.INVALID_TEXT, 'Text is required for translate operation');
+      throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for translate operation');
     }
 
     if (!options.targetLanguage) {
-      throw createError('MISSING_TARGET_LANGUAGE' as any, 'Target language is required for translation');
+      throw ErrorHandlingService.createError('MISSING_TARGET_LANGUAGE' as any, 'Target language is required for translation');
     }
 
-    // 检查认证状态 - 暂时移除认证要求
-    // const isAuthenticated = await this.ensureAuthenticated();
-    // if (!isAuthenticated) {
-    //   throw createError('AUTH_REQUIRED', 'Authentication required for AI operations');
-    // }
-
+    
     // 使用前端AI服务
     if (!this.frontendAIService) {
-      throw createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
+      throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
     }
 
     // 根据文本来源决定处理方式
@@ -647,163 +612,18 @@ export class ActionController {
         };
 
       default:
-        throw createError('INVALID_CONFIG_ACTION' as any, `Unknown config action: ${action}`);
+        throw ErrorHandlingService.createError('INVALID_CONFIG_ACTION' as any, `Unknown config action: ${action}`);
     }
   }
 
-  /**
-   * 处理认证命令
-   */
-  /**
-   * 处理认证命令（简化版）
-   */
-  private async handleAuth(payload: any): Promise<any> {
-    if (!this.authService) {
-      throw createError('AUTH_NOT_INITIALIZED' as any, 'Authentication service not initialized');
-    }
-
-    const { action } = payload;
-
-    switch (action) {
-      case 'status':
-        return {
-          isAuthenticated: false,
-          status: 'not_implemented',
-          userInfo: null,
-          message: '认证功能暂未实现'
-        };
-
-      case 'login':
-      case 'logout':
-      case 'showStatus':
-      case 'showNotImplemented':
-        vscode.window.showInformationMessage('认证功能暂未实现，请直接配置AI服务使用');
-        return {
-          success: false,
-          message: '认证功能暂未实现',
-          status: 'not_implemented'
-        };
-
-      case 'loginWithToken':
-      case 'loginWithCredentials':
-        throw createError('AUTH_NOT_IMPLEMENTED' as any, '登录功能暂未实现');
-
-      default:
-        throw createError('UNKNOWN_AUTH_ACTION' as any, `Unknown auth action: ${action}`);
-    }
-  }
-
-  /**
-   * 处理设置命令
-   */
-  private async handleSettings(payload: any): Promise<any> {
-    // 从payload中提取action和data
-    let action, data;
-
-    if (payload.options && payload.options.action) {
-      action = payload.options.action;
-      data = payload.options.data;
-    } else if (payload.action) {
-      action = payload.action;
-      data = payload.data;
-    } else {
-      // 默认为get操作
-      action = 'get';
-      data = null;
-    }
-
-    switch (action) {
-      case 'get':
-        return this.getSettings();
-      case 'update':
-        return this.updateSettings(data);
-      case 'validate':
-        return this.validateSettings();
-      default:
-        throw createError('UNKNOWN_SETTINGS_ACTION' as any, `Unknown settings action: ${action}`);
-    }
-  }
-
-  /**
-   * 获取设置
-   */
-  private getSettings(): any {
-    const config = vscode.workspace.getConfiguration('docmate');
-
-    return {
-      aiService: {
-        apiKey: config.get('aiService.apiKey', ''),
-        endpoint: config.get('aiService.endpoint', ''),
-      },
-      terminology: {
-        autoCheck: config.get('terminology.autoCheck', true),
-      },
-      // 不返回敏感信息如API密钥的完整值
-      masked: {
-        hasApiKey: !!config.get('aiService.apiKey', ''),
-        hasEndpoint: !!config.get('aiService.endpoint', ''),
-      }
-    };
-  }
-
-  /**
-   * 更新设置
-   */
-  private async updateSettings(data: any): Promise<{ status: string }> {
-    const config = vscode.workspace.getConfiguration('docmate');
-
-    try {
-      if (data.aiService) {
-        if (data.aiService.apiKey !== undefined) {
-          await config.update('aiService.apiKey', data.aiService.apiKey, vscode.ConfigurationTarget.Global);
-        }
-        if (data.aiService.endpoint !== undefined) {
-          await config.update('aiService.endpoint', data.aiService.endpoint, vscode.ConfigurationTarget.Global);
-        }
-      }
-
-      if (data.terminology) {
-        if (data.terminology.autoCheck !== undefined) {
-          await config.update('terminology.autoCheck', data.terminology.autoCheck, vscode.ConfigurationTarget.Global);
-        }
-      }
-
-      // 更新AI服务配置
-      this.updateConfiguration();
-
-      return { status: 'updated' };
-    } catch (error) {
-      const docMateError = ErrorHandlingService.fromError(error, 'SETTINGS_UPDATE_FAILED' as any);
-      throw createError(docMateError.code as any, 'Failed to update settings', { originalError: error });
-    }
-  }
-
-  /**
-   * 验证设置
-   */
-  private validateSettings(): any {
-    return {
-      terminology: {
-        isLoaded: !!this.terminologyService.getDatabase(),
-      }
-    };
-  }
-
+  
+  
   /**
    * 更新配置
    */
   updateConfiguration(): void {
     const config = vscode.workspace.getConfiguration('docmate');
     const newConfig = this.getAIConfig();
-
-    // 同时更新configService
-    configService.setConfig({
-      apiKey: newConfig.apiKey,
-      endpoint: newConfig.endpoint,
-      model: newConfig.model,
-      timeout: newConfig.timeout,
-      maxRetries: newConfig.maxRetries,
-    });
 
     // 更新前端AI服务配置
     if (this.frontendAIService) {

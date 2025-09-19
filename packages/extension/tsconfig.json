@@ -6,8 +6,10 @@
     "composite": true,
     "declaration": true,
     "declarationMap": true,
+    "downlevelIteration": true,
     "lib": [
-      "ES2022"
+      "ES2022",
+      "DOM"
     ],
     "types": [
       "vscode",

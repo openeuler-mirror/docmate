@@ -2,7 +2,7 @@
   "name": "docmate",
   "displayName": "DocMate - openEuler Writing Assistant",
   "description": "AI-powered intelligent writing assistant for openEuler documentation with checking, polishing, translation and rewriting features",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "publisher": "DelthinYee",
   "icon": "images/DocMate.png",
   "repository": {
@@ -83,18 +83,8 @@
         "category": "DocMate"
       },
       {
-        "command": "docmate.login",
-        "title": "Login to openEuler",
-        "category": "DocMate"
-      },
-      {
         "command": "docmate.sidebar.focus",
         "title": "Show DocMate Sidebar",
-        "category": "DocMate"
-      },
-      {
-        "command": "docmate.logout",
-        "title": "Logout",
         "category": "DocMate"
       }
     ],
@@ -117,10 +107,6 @@
           "group": "docmate"
         }
       ]
-    },
-    "configuration": {
-      "title": "DocMate",
-      "properties": {}
     }
   },
   "scripts": {
