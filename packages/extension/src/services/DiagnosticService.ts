@@ -29,7 +29,6 @@ export class DiagnosticService {
    */
   public static showDiagnostics(uri: vscode.Uri, diagnostics: DiagnosticInfo[]): void {
     if (!this.diagnosticCollection) {
-      console.warn('Diagnostic service not initialized');
       return;
     }
 
@@ -97,18 +96,13 @@ export class DiagnosticService {
    */
   public static clearSpecificDiagnostics(uri: vscode.Uri, originalText: string): void {
     if (!this.diagnosticCollection) {
-      console.warn('clearSpecificDiagnostics: Diagnostic service not initialized');
       return;
     }
 
     const currentDiagnostics = this.diagnosticCollection.get(uri) || [];
     if (currentDiagnostics.length === 0) {
-      console.log('clearSpecificDiagnostics: No diagnostics found for document');
       return;
     }
-
-    console.log(`clearSpecificDiagnostics: Looking for diagnostics matching: "${originalText.substring(0, 50)}..."`);
-    console.log(`clearSpecificDiagnostics: Found ${currentDiagnostics.length} total diagnostics`);
 
     // 过滤出需要保留的诊断信息
     const filteredDiagnostics = currentDiagnostics.filter(diagnostic => {
@@ -124,36 +118,22 @@ export class DiagnosticService {
 
     // 重新设置过滤后的诊断信息
     this.diagnosticCollection.set(uri, filteredDiagnostics);
-    console.log(`clearSpecificDiagnostics: Cleared ${currentDiagnostics.length - filteredDiagnostics.length} diagnostics, ${filteredDiagnostics.length} remaining`);
   }
 
   /**
-   * 检查两个文本是否匹配（使用多种匹配策略）
+   * 检查两个文本是否匹配
    */
   private static isTextMatch(text1: string, text2: string): boolean {
     // 完全匹配
-    if (text1 === text2) {
-      return true;
-    }
+    if (text1 === text2) return true;
 
-    // 去除前后空格后匹配
-    if (text1.trim() === text2.trim()) {
-      return true;
-    }
-
-    // 标准化空白符后匹配
+    // 标准化空白符后匹配（包含去除前后空格）
     const normalized1 = text1.replace(/\s+/g, ' ').trim();
     const normalized2 = text2.replace(/\s+/g, ' ').trim();
-    if (normalized1 === normalized2) {
-      return true;
-    }
+    if (normalized1 === normalized2) return true;
 
-    // 部分匹配（如果一个文本包含另一个）
-    if (text1.includes(text2) || text2.includes(text1)) {
-      return true;
-    }
-
-    return false;
+    // 部分匹配（一个文本包含另一个）
+    return text1.includes(text2) || text2.includes(text1);
   }
 
   /**
@@ -228,7 +208,6 @@ export class DiagnosticService {
       }
 
       // 策略2: 如果直接替换失败，尝试基于文本内容的智能匹配
-      console.log('Direct replacement failed, trying content-based matching...');
       const smartResult = await SmartApplyService.applyTextSuggestion(
         data.suggested_text,
         data.original_text,
@@ -248,7 +227,6 @@ export class DiagnosticService {
 
     } catch (error) {
       const docMateError = ErrorHandlingService.fromError(error, ErrorCode.UNKNOWN_ERROR);
-      console.error('QuickFix: Error applying suggestion:', docMateError);
       vscode.window.showErrorMessage(`应用修复失败: ${docMateError.message}`);
     }
   }
@@ -263,30 +241,18 @@ export class DiagnosticService {
     originalText: string
   ): Promise<boolean> {
     try {
-      // 验证range中的文本是否与original_text匹配
       const currentText = editor.document.getText(range);
-      if (currentText === originalText) {
-        const success = await editor.edit(editBuilder => {
+
+      // 精确匹配或规范化匹配（处理空格差异）
+      if (currentText === originalText ||
+          currentText.replace(/\s+/g, ' ').trim() === originalText.replace(/\s+/g, ' ').trim()) {
+        return await editor.edit(editBuilder => {
           editBuilder.replace(range, suggestedText);
         });
-        return success;
-      }
-
-      // 尝试规范化匹配（处理空格差异）
-      const normalizedCurrent = currentText.replace(/\s+/g, ' ').trim();
-      const normalizedOriginal = originalText.replace(/\s+/g, ' ').trim();
-
-      if (normalizedCurrent === normalizedOriginal) {
-        const success = await editor.edit(editBuilder => {
-          editBuilder.replace(range, suggestedText);
-        });
-        return success;
       }
 
       return false;
-
     } catch (error) {
-      console.error('Direct replacement error:', error);
       return false;
     }
   }
@@ -321,28 +287,13 @@ export class DiagnosticService {
     }
 
     const diagnostics = this.diagnosticCollection.get(uri) || [];
-    const stats = {
-      errors: 0,
-      warnings: 0,
-      infos: 0,
+
+    return {
+      errors: diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Error).length,
+      warnings: diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Warning).length,
+      infos: diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Information).length,
       total: diagnostics.length
     };
-
-    diagnostics.forEach(diagnostic => {
-      switch (diagnostic.severity) {
-        case vscode.DiagnosticSeverity.Error:
-          stats.errors++;
-          break;
-        case vscode.DiagnosticSeverity.Warning:
-          stats.warnings++;
-          break;
-        case vscode.DiagnosticSeverity.Information:
-          stats.infos++;
-          break;
-      }
-    });
-
-    return stats;
   }
 }
 

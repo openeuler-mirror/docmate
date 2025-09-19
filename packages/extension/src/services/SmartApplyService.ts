@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ErrorHandlingService } from './ErrorHandlingService';
 import { ErrorCode } from '@docmate/shared';
-import { createPatch, applyPatch, diffWords } from 'diff';
+import { diffWords } from 'diff';
 
 /**
  * 智能应用服务
@@ -17,25 +17,21 @@ export class SmartApplyService {
     originalText?: string,
     editor?: vscode.TextEditor
   ): Promise<{ success: boolean; message?: string }> {
-
     const activeEditor = editor || vscode.window.activeTextEditor;
     if (!activeEditor) {
       throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR);
     }
 
-    // 如果有选择的文本，直接替换
     if (!activeEditor.selection.isEmpty) {
       const success = await activeEditor.edit(editBuilder => {
         editBuilder.replace(activeEditor.selection, text);
       });
-
       return {
         success,
         message: success ? '已应用建议' : '应用失败'
       };
     }
 
-    // 无选择文本的情况
     if (!originalText) {
       throw ErrorHandlingService.createError(
         ErrorCode.ORIGINAL_TEXT_NOT_FOUND,
@@ -43,25 +39,21 @@ export class SmartApplyService {
       );
     }
 
-    // 尝试使用diff库的patch应用方法
     const patchMatch = await this.tryPatchApply(activeEditor, originalText, text);
     if (patchMatch.success) {
       return patchMatch;
     }
 
-    // 尝试精确匹配
     const exactMatch = await this.tryExactMatch(activeEditor, originalText, text);
     if (exactMatch.success) {
       return exactMatch;
     }
 
-    // 尝试模糊匹配
     const fuzzyMatch = await this.tryFuzzyMatch(activeEditor, originalText, text);
     if (fuzzyMatch.success) {
       return fuzzyMatch;
     }
 
-    // 提供用户选择
     return await this.showUserSelection(activeEditor, originalText, text);
   }
 
@@ -73,11 +65,9 @@ export class SmartApplyService {
     originalText: string,
     newText: string
   ): Promise<{ success: boolean; message?: string }> {
-
     try {
       const documentText = editor.document.getText();
 
-      // 如果原始文本与文档当前内容匹配，直接应用新文本
       if (documentText.includes(originalText)) {
         const originalIndex = documentText.indexOf(originalText);
         const startPos = editor.document.positionAt(originalIndex);
@@ -96,20 +86,18 @@ export class SmartApplyService {
         }
       }
 
-      // 如果直接匹配失败，尝试使用diff分析变化
       const diffResult = diffWords(originalText, newText);
       const changes = diffResult.filter(part => part.added || part.removed);
 
-      // 如果变化较少，可能是局部修改，尝试查找相似位置
       if (changes.length <= 4) {
-        const similarity = this.calculateSimilarity(originalText, documentText.substring(0, Math.min(originalText.length * 2, documentText.length)));
-        if (similarity > 0.8) {
-          // 文档开头部分与原文高度相似，尝试应用修改
+        // 查找最佳匹配位置
+        const bestMatchIndex = this.findBestMatchIndex(documentText, originalText);
+        if (bestMatchIndex !== -1) {
+          const startPos = editor.document.positionAt(bestMatchIndex);
+          const endPos = editor.document.positionAt(bestMatchIndex + originalText.length);
+          const range = new vscode.Range(startPos, endPos);
+
           const success = await editor.edit(editBuilder => {
-            const range = new vscode.Range(
-              editor.document.positionAt(0),
-              editor.document.positionAt(Math.min(originalText.length, documentText.length))
-            );
             editBuilder.replace(range, newText);
           });
 
@@ -122,7 +110,6 @@ export class SmartApplyService {
         }
       }
     } catch (error) {
-      // patch应用失败，继续其他匹配方式
       console.debug('Smart patch apply failed:', error);
     }
 
@@ -137,15 +124,13 @@ export class SmartApplyService {
     originalText: string,
     newText: string
   ): Promise<{ success: boolean; message?: string }> {
-
     const documentText = editor.document.getText();
 
-    // 尝试多种匹配方式：原始文本、去除前后空格、标准化空白符
     const matchCandidates = [
       originalText,
       originalText.trim(),
       originalText.replace(/\s+/g, ' ').trim(),
-      originalText.replace(/^\s+|\s+$/g, '') // 只去除前后空格，保留中间空白符
+      originalText.replace(/^\s+|\s+$/g, '')
     ];
 
     for (const candidate of matchCandidates) {
@@ -316,6 +301,49 @@ export class SmartApplyService {
 
     // 按相似度排序
     return results.sort((a, b) => b.similarity - a.similarity).slice(0, 5);
+  }
+
+  /**
+   * 查找最佳匹配位置
+   */
+  private static findBestMatchIndex(documentText: string, targetText: string): number {
+    // 尝试精确匹配
+    let index = documentText.indexOf(targetText);
+    if (index !== -1) {
+      return index;
+    }
+
+    // 尝试规范化匹配（处理空格差异）
+    const normalizedTarget = targetText.replace(/\s+/g, ' ').trim();
+    const words = normalizedTarget.split(' ');
+
+    // 寻找第一个关键词
+    if (words.length > 0) {
+      const firstWord = words[0];
+      index = documentText.indexOf(firstWord);
+
+      if (index !== -1) {
+        // 验证周围上下文是否匹配
+        const contextStart = Math.max(0, index - 10);
+        const contextEnd = Math.min(documentText.length, index + targetText.length + 10);
+        const context = documentText.substring(contextStart, contextEnd);
+
+        // 检查上下文中是否包含足够多的目标文本内容
+        let matchScore = 0;
+        for (const word of words) {
+          if (context.includes(word)) {
+            matchScore++;
+          }
+        }
+
+        // 如果匹配度超过50%，认为是有效匹配
+        if (matchScore / words.length >= 0.5) {
+          return index;
+        }
+      }
+    }
+
+    return -1;
   }
 
   /**
