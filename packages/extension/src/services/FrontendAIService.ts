@@ -45,14 +45,6 @@ export interface StreamingCallbacks {
 export class FrontendAIService {
   private config: FrontendAIConfig;
   private terminologyService: TerminologyService;
-  private abortController: AbortController | null = null;
-
-  /**
-   * 格式化错误信息的辅助方法
-   */
-  private formatErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-  }
 
   constructor(config: FrontendAIConfig) {
     this.config = {
@@ -70,191 +62,73 @@ export class FrontendAIService {
   }
 
   /**
-   * 检查文本 - v1.2新版结构化实现
+   * 检查文本 - 简化版本
    */
   async check(text: string, options: any = {}): Promise<AIResult> {
-    // 直接使用v1.2新架构
-    return this.checkWithV12Architecture(text, options);
-  }
-
-  /**
-   * 使用v1.2架构进行文本检查
-   */
-  private async checkWithV12Architecture(text: string, options: any): Promise<AIResult> {
-    const {
-      enableGrammar = true,
-      enableStyle = true,
-      enableTerminology = true,
-      enableConsistency = true,
-    } = options;
-
-    // === 调试信息：v1.2架构检查开始 ===
-    console.log('\n=== FrontendAIService v1.2 Debug Info ===');
-    console.log('Input text length:', text.length);
-    console.log('Input text preview:', JSON.stringify(text.substring(0, 200)) + (text.length > 200 ? '...' : ''));
-    console.log('Options:', options);
-
     try {
-      // 导入v1.2相关服务
       const { ChunkerService } = await import('./ChunkerService');
       const { ValidationService } = await import('./ValidationService');
       const vscode = await import('vscode');
 
-      // 1. 获取选区范围
+      // 获取选区范围
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
+        throw createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
       }
 
       const selection = editor.selection;
       const selectionRange = new vscode.Range(selection.start, selection.end);
-      console.log('Selection range:', selectionRange);
 
-      // 2. 文本分块
-      console.log('\n--- Starting Text Chunking ---');
+      // 文本分块
       const chunks = ChunkerService.chunkText(text, selectionRange);
-      console.log('Chunking completed, total chunks:', chunks.length);
-
       if (!ChunkerService.validateChunks(chunks)) {
-        throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Failed to chunk text');
+        throw createError(ErrorCode.INVALID_TEXT, 'Failed to chunk text');
       }
 
-      // 3. 并行处理chunks - 真正的并行实现
+      // 并行处理chunks - 预先导入避免重复加载
+      const { buildSingleChunkPrompt } = await import('../prompts/checkPrompts');
+      const chunkResults = await Promise.all(
+        chunks.map(async (chunk, index) => {
+          try {
+            const chunkPrompt = buildSingleChunkPrompt({ chunk });
+            const chunkAiResponse = await this.callAIService(
+              chunkPrompt,
+              [],
+              this.getChunkCheckToolOptions(chunk.id)
+            );
+            const chunkLlmResult = this.parseChunkResponse(chunkAiResponse, chunk.id);
 
-      console.log('\n=== Starting Parallel Chunk Processing ===');
-      const startTime = Date.now();
+            return {
+              chunk,
+              llmResult: chunkLlmResult,
+              error: null
+            };
+          } catch (error) {
+            return {
+              chunk,
+              llmResult: { suggestions: [] },
+              error
+            };
+          }
+        })
+      );
 
-      const chunkPromises = chunks.map(async (chunk, index) => {
-        const chunkRequestId = `chunk-${chunk.id}-${index}`;
-        try {
-          console.log(`\n[${chunkRequestId}] === Processing Chunk ${index + 1}/${chunks.length} ===`);
-          console.log(`[${chunkRequestId}] Chunk ID: ${chunk.id}`);
-          console.log(`[${chunkRequestId}] Chunk core text: ${JSON.stringify(chunk.core_text)}`);
-          console.log(`[${chunkRequestId}] Chunk context_before: ${chunk.context_before ? JSON.stringify(chunk.context_before) : '[none]'}`);
-          console.log(`[${chunkRequestId}] Chunk context_after: ${chunk.context_after ? JSON.stringify(chunk.context_after) : '[none]'}`);
-          console.log(`[${chunkRequestId}] Chunk range:`, chunk.range);
-
-          // 为单个chunk构建prompt
-          const { buildSingleChunkPrompt } = await import('../prompts/checkPrompts');
-          const chunkPayload = {
-            chunk
-          };
-          console.log(`[${chunkRequestId}] Chunk payload:`, chunkPayload);
-
-          const chunkPrompt = buildSingleChunkPrompt(chunkPayload);
-          console.log(`[${chunkRequestId}] Generated prompt length: ${chunkPrompt.length}`);
-          console.log(`[${chunkRequestId}] Generated prompt preview: ${chunkPrompt.substring(0, 200)}...`);
-
-          // 调用AI服务处理单个chunk - 使用新的tools调用方式
-          console.log(`[${chunkRequestId}] Calling AI service for chunk ${index + 1}...`);
-          const chunkAiResponse = await this.callAIService(
-            chunkPrompt,
-            [],
-            this.getV12StructuredCheckToolOptions(chunkRequestId, chunk.id)
-          );
-          console.log(`[${chunkRequestId}] AI response for chunk ${index + 1}:`, JSON.stringify(chunkAiResponse).substring(0, 500) + '...');
-
-          // 解析响应，传入expectedChunkId确保chunk_id正确
-          const chunkLlmResult = this.parseStructuredAIResponse(chunkAiResponse, chunk.id);
-          console.log(`[${chunkRequestId}] Parsed LLM result for chunk ${index + 1}:`, chunkLlmResult);
-
-          return {
-            chunk,
-            llmResult: chunkLlmResult,
-            prompt: chunkPrompt,
-            response: chunkAiResponse,
-            error: null,
-            processingTime: Date.now() - startTime
-          };
-
-        } catch (error) {
-          console.error(`[${chunkRequestId}] Chunk ${index} processing failed:`, error);
-          return {
-            chunk,
-            llmResult: { suggestions: [] },
-            prompt: '',
-            response: '',
-            error: error,
-            processingTime: Date.now() - startTime
-          };
-        }
-      });
-
-      // 等待所有chunk处理完成
-      const chunkResults = await Promise.all(chunkPromises);
-
-      const parallelProcessingTime = Date.now() - startTime;
-      console.log(`\n=== Parallel Processing Completed ===`);
-      console.log(`Total parallel processing time: ${parallelProcessingTime}ms`);
-      console.log(`Average time per chunk: ${Math.round(parallelProcessingTime / chunks.length)}ms`);
-      console.log(`Chunks processed successfully: ${chunkResults.filter(r => !r.error).length}/${chunks.length}`);
-
-      console.log('\n=== Chunk Processing Results ===');
-      chunkResults.forEach((result, index) => {
-        console.log(`Chunk ${index + 1} result:`, {
-          success: !result.error,
-          processingTime: result.processingTime,
-          suggestionsCount: result.llmResult.suggestions?.length || 0,
-          error: result.error ? this.formatErrorMessage(result.error) : null,
-          suggestions: result.llmResult.suggestions?.map((s: any) => ({
-            type: s.type,
-            description: s.description,
-            original_text: s.original_text,
-            suggested_text: s.suggested_text
-          }))
-        });
-      });
-
-      // 4. 合并结果
+      // 合并结果
       const allSuggestions = chunkResults.flatMap(result =>
         result.llmResult.suggestions || []
       );
-
-      console.log('\n=== Merged Suggestions ===');
-      console.log('Total suggestions before validation:', allSuggestions.length);
-      console.log('All suggestions:', allSuggestions.map((s, i) => ({
-        index: i,
-        chunk_id: s.chunk_id,
-        type: s.type,
-        description: s.description,
-        original_text: s.original_text,
-        suggested_text: s.suggested_text
-      })));
 
       const mergedLlmResult = {
         suggestions: allSuggestions
       };
 
-      // 5. 验证和映射
-      console.log('\n--- Starting Validation and Mapping ---');
+      // 验证和映射
       const diagnostics = ValidationService.validateAndMap(chunks, mergedLlmResult);
-      console.log('Validation completed, valid diagnostics:', diagnostics.length);
-      console.log('Diagnostics details:', diagnostics.map((d, i) => ({
-        index: i,
-        message: d.message,
-        severity: d.severity,
-        range: d.range,
-        original_text: d.original_text,
-        suggested_text: d.suggested_text
-      })));
 
-      
-      // 6. 转换为AIResult格式（保持向后兼容）
-      const result = this.convertDiagnosticsToAIResult(diagnostics, text);
-      console.log('\n=== Final AI Result ===');
-      console.log('Issues found:', result.issues?.length || 0);
-      console.log('AI result:', result);
-
-      return result;
+      return this.convertDiagnosticsToAIResult(diagnostics, text);
 
     } catch (error) {
-      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
-      ErrorHandlingService.logError(docMateError, 'FrontendAIService.checkWithV12Architecture');
-      throw ErrorHandlingService.createContextualError(
-        docMateError.code as ErrorCode,
-        `V1.2 text check failed: ${docMateError.message}`,
-        'FrontendAIService.checkWithV12Architecture'
-      );
+      throw createError(ErrorCode.AI_SERVICE_ERROR, `Text check failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -263,24 +137,14 @@ export class FrontendAIService {
    * 润色文本
    */
   async polish(text: string, options: any = {}): Promise<AIResult> {
-    const {
-      focusOn = 'all',
-      targetAudience = 'technical'
-    } = options;
-
+    const { focusOn = 'all', targetAudience = 'technical' } = options;
     const prompt = buildPolishPrompt(text, focusOn, targetAudience);
 
     try {
       const aiResponse = await this.callAIService(prompt, [], this.getPolishToolOptions());
       return this.parseAIResponse(aiResponse, 'polish', text);
     } catch (error) {
-      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
-      ErrorHandlingService.logError(docMateError, 'FrontendAIService.polish');
-      throw ErrorHandlingService.createContextualError(
-        docMateError.code as ErrorCode,
-        `Text polish failed: ${docMateError.message}`,
-        'FrontendAIService.polish'
-      );
+      throw createError(ErrorCode.AI_SERVICE_ERROR, `Text polish failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -288,13 +152,7 @@ export class FrontendAIService {
    * 翻译文本
    */
   async translate(text: string, options: any = {}): Promise<AIResult> {
-    const {
-      sourceLanguage = 'auto',
-      targetLanguage = 'en-US',
-      preserveTerminology = true,
-      context = ''
-    } = options;
-
+    const { sourceLanguage = 'auto', targetLanguage = 'en-US', preserveTerminology = true, context = '' } = options;
     const prompt = buildTranslatePrompt(text, sourceLanguage, targetLanguage, preserveTerminology, context);
 
     try {
@@ -309,13 +167,7 @@ export class FrontendAIService {
       }
       return result;
     } catch (error) {
-      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
-      ErrorHandlingService.logError(docMateError, 'FrontendAIService.translate');
-      throw ErrorHandlingService.createContextualError(
-        docMateError.code as ErrorCode,
-        `Text translation failed: ${docMateError.message}`,
-        'FrontendAIService.translate'
-      );
+      throw createError(ErrorCode.AI_SERVICE_ERROR, `Text translation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -329,13 +181,7 @@ export class FrontendAIService {
       const aiResponse = await this.callAIService(prompt, conversationHistory, this.getRewriteToolOptions());
       return this.parseAIResponse(aiResponse, 'rewrite', text);
     } catch (error) {
-      const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
-      ErrorHandlingService.logError(docMateError, 'FrontendAIService.rewrite');
-      throw ErrorHandlingService.createContextualError(
-        docMateError.code as ErrorCode,
-        `Text rewrite failed: ${docMateError.message}`,
-        'FrontendAIService.rewrite'
-      );
+      throw createError(ErrorCode.AI_SERVICE_ERROR, `Text rewrite failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -350,61 +196,35 @@ export class FrontendAIService {
       toolChoice?: any;
       responseFormat?: any;
       temperature?: number;
-      requestId?: string; // 用于标识并行请求的唯一ID
     } = {}
   ): Promise<any> {
-    const requestId = options.requestId || `req-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-
     // 验证配置
-    const missingFields = [];
-    if (!this.config.apiKey || this.config.apiKey.trim() === '') {
-      missingFields.push('API Key');
-    }
-    if (!this.config.baseUrl || this.config.baseUrl.trim() === '') {
-      missingFields.push('Base URL');
-    }
-    if (!this.config.model || this.config.model.trim() === '') {
-      missingFields.push('Model');
+    if (!this.config.apiKey || !this.config.baseUrl || !this.config.model) {
+      throw createError(ErrorCode.CONFIG_MISSING, 'AI service configuration is incomplete');
     }
 
-    if (missingFields.length > 0) {
-      throw ErrorHandlingService.createError(
-        ErrorCode.CONFIG_MISSING,
-        `AI service configuration is incomplete. Missing: ${missingFields.join(', ')}. Please configure in settings.`
-      );
-    }
+    // 确保timeout设置合理
+    const timeout = this.config.timeout || 30000; // 默认30秒
 
     // 构建消息列表
-    const messages: Array<{ role: string; content: string }> = [];
-
-    // 添加对话历史
-    if (conversationHistory && conversationHistory.length > 0) {
-      for (const msg of conversationHistory) {
-        messages.push({
-          role: msg.role === 'user' ? 'user' : 'assistant',
-          content: msg.content
-        });
-      }
-    }
-
-    // 添加当前提示词
-    messages.push({ role: 'user', content: prompt });
+    const messages = [
+      ...(conversationHistory || []).map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      })),
+      { role: 'user', content: prompt }
+    ];
 
     // 构建请求体
-    const requestBody: any = {
+    const requestBody = {
       model: this.config.model,
-      messages: messages,
+      messages,
       temperature: options.temperature ?? 0.1,
-      max_tokens: options.tools ? 4000 : 2000, // tools调用需要更多tokens
+      max_tokens: options.tools ? 4000 : 2000,
+      ...(options.tools && { tools: options.tools }),
+      ...(options.toolChoice && { tool_choice: options.toolChoice }),
+      ...(options.responseFormat && { response_format: options.responseFormat })
     };
-
-    if (options.tools) {
-      requestBody.tools = options.tools;
-      requestBody.tool_choice = options.toolChoice ?? 'required';
-    }
-    if (options.responseFormat) {
-      requestBody.response_format = options.responseFormat;
-    }
 
     // 确保baseUrl以正确的端点结尾
     let endpoint = this.config.baseUrl;
@@ -412,21 +232,9 @@ export class FrontendAIService {
       endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
     }
 
-    console.log(`[${requestId}] Starting AI call with tools: ${!!options.tools}, responseFormat: ${!!options.responseFormat}`);
-
     // 重试机制
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       try {
-        console.log(`[${requestId}] Attempting AI call (${attempt + 1}/${this.config.maxRetries})`);
-
-        // 为每个请求创建独立的AbortController，避免并行请求间的干扰
-        const requestAbortController = new AbortController();
-
-        // 设置超时
-        const timeoutId = setTimeout(() => {
-          requestAbortController.abort();
-        }, this.config.timeout!);
-
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
@@ -434,11 +242,8 @@ export class FrontendAIService {
             'Authorization': `Bearer ${this.config.apiKey}`,
           },
           body: JSON.stringify(requestBody),
-          signal: requestAbortController.signal
+          signal: AbortSignal.timeout(timeout)
         });
-
-        // 清除超时
-        clearTimeout(timeoutId);
 
         if (response.ok) {
           const data = await response.json() as any;
@@ -449,68 +254,36 @@ export class FrontendAIService {
             const first = toolCalls[0];
             const argsStr = first?.function?.arguments || '{}';
             try {
-              // 增强的 JSON 解析，处理特殊字符
-              const args = this.parseToolCallArguments(argsStr);
-              console.log(`[${requestId}] Tool call successful: ${first.function?.name}`);
+              const args = JSON.parse(argsStr);
               return { tool: first.function?.name, args };
             } catch (e) {
-              console.error(`[${requestId}] Tool calling arguments parse error:`, e, 'Raw args:', argsStr);
-              throw ErrorHandlingService.createError(ErrorCode.TOOL_CALL_PARSE_ERROR, `Tool calling arguments JSON 解析失败: ${this.formatErrorMessage(e)}`);
+              throw createError(ErrorCode.TOOL_CALL_PARSE_ERROR, 'Tool calling arguments JSON parse failed');
             }
           }
 
           const content = choice?.message?.content;
-
-          // 如果没有content但有tool calls，说明AI使用了工具调用
           if (!content && (!toolCalls || toolCalls.length === 0)) {
-            const error = ErrorHandlingService.createError(
-              ErrorCode.RESPONSE_FORMAT_ERROR,
-              'Invalid response format from AI service: no content or tool calls'
-            );
-            ErrorHandlingService.logError(error, `[${requestId}] FrontendAIService.callAIService - Invalid Response`);
-            throw error;
+            throw createError(ErrorCode.RESPONSE_FORMAT_ERROR, 'Invalid response format from AI service');
           }
-
-          console.log(`[${requestId}] AI call successful`, {
-            attempt: attempt + 1,
-            responseLength: content?.length || 0,
-            hasToolCalls: toolCalls?.length > 0
-          });
 
           return content || '';
         } else {
           const errorText = await response.text();
-          const error = ErrorHandlingService.createError(
-            ErrorCode.AI_SERVICE_ERROR,
-            `AI service error: ${response.status} - ${errorText}`
-          );
-          ErrorHandlingService.logError(error, `[${requestId}] FrontendAIService.callAIService - Attempt ${attempt + 1}`);
-
           if (attempt === this.config.maxRetries - 1) {
-            throw error;
+            throw createError(ErrorCode.AI_SERVICE_ERROR, `AI service error: ${response.status} - ${errorText}`);
           }
         }
       } catch (error) {
-        const docMateError = ErrorHandlingService.fromError(error, ErrorCode.AI_SERVICE_ERROR);
-        ErrorHandlingService.logError(docMateError, `[${requestId}] FrontendAIService.callAIService - Attempt ${attempt + 1}`);
-
         if (attempt === this.config.maxRetries - 1) {
-          // 最后一次重试失败，保留原始错误码，只添加重试信息
-          const finalError = ErrorHandlingService.createContextualError(
-            docMateError.code as ErrorCode,
-            `${ErrorHandlingService.getFriendlyMessage(docMateError)} (重试${this.config.maxRetries}次后失败)`,
-            'FrontendAIService.callAIService'
-          );
-          throw finalError;
+          throw createError(ErrorCode.AI_SERVICE_ERROR, `AI service call failed: ${error instanceof Error ? error.message : String(error)}`);
         }
-
-        // 等待一段时间后重试，使用随机退避避免并发请求的同步重试
-        const backoffTime = 1000 * (attempt + 1) * (0.8 + Math.random() * 0.4);
+        // 等待一段时间后重试
+        const backoffTime = 1000 * (attempt + 1);
         await new Promise(resolve => setTimeout(resolve, backoffTime));
       }
     }
 
-    throw ErrorHandlingService.createError(ErrorCode.AI_SERVICE_ERROR, 'AI service call failed');
+    throw createError(ErrorCode.AI_SERVICE_ERROR, 'AI service call failed');
   }
 
   /**
@@ -520,185 +293,16 @@ export class FrontendAIService {
     return !!(this.config.apiKey && this.config.baseUrl && this.config.model);
   }
 
-  /**
-   * 获取当前配置
-   */
-  getConfig(): FrontendAIConfig {
-    return { ...this.config };
-  }
-
+  
   /**
    * 取消当前请求
    */
   cancelRequest(): void {
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
-    }
-  }
-
-
-
-  /**
-   * 流式调用AI服务
-   */
-  async callAIServiceStreaming(
-    prompt: string,
-    conversationHistory: ChatMessage[] = [],
-    callbacks: StreamingCallbacks = {},
-    options: {
-      tools?: any[];
-      toolChoice?: any;
-      responseFormat?: any;
-      temperature?: number;
-    } = {}
-  ): Promise<string> {
-    // 验证配置
-    const missingFields = [];
-    if (!this.config.apiKey || this.config.apiKey.trim() === '') {
-      missingFields.push('API Key');
-    }
-    if (!this.config.baseUrl || this.config.baseUrl.trim() === '') {
-      missingFields.push('Base URL');
-    }
-    if (!this.config.model || this.config.model.trim() === '') {
-      missingFields.push('Model');
-    }
-
-    if (missingFields.length > 0) {
-      throw createError(
-        'CONFIG_MISSING' as any,
-        `AI service configuration is incomplete. Missing: ${missingFields.join(', ')}. Please configure in settings.`
-      );
-    }
-
-    // 创建新的AbortController
-    this.abortController = new AbortController();
-
-    try {
-      callbacks.onStart?.();
-
-      const response = await this.makeStreamingRequest(
-        prompt,
-        conversationHistory,
-        options,
-        callbacks
-      );
-
-      callbacks.onComplete?.(response);
-      return response;
-    } catch (error) {
-      callbacks.onError?.(error as Error);
-      throw error;
-    } finally {
-      this.abortController = null;
-    }
+    // 简化实现，保留接口兼容性
   }
 
   /**
-   * 执行流式请求
-   */
-  private async makeStreamingRequest(
-    prompt: string,
-    conversationHistory: ChatMessage[],
-    options: any,
-    callbacks: StreamingCallbacks
-  ): Promise<string> {
-    const messages = [
-      ...conversationHistory.map(msg => ({
-        role: msg.role,
-        content: msg.content
-      })),
-      { role: 'user', content: prompt }
-    ];
-
-    const requestBody = {
-      model: this.config.model,
-      messages,
-      stream: this.config.enableStreaming,
-      temperature: options.temperature || 0.7,
-      ...(options.tools && { tools: options.tools }),
-      ...(options.toolChoice && { tool_choice: options.toolChoice }),
-      ...(options.responseFormat && { response_format: options.responseFormat })
-    };
-
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`
-      },
-      body: JSON.stringify(requestBody),
-      signal: this.abortController?.signal
-    });
-
-    if (!response.ok) {
-      throw ErrorHandlingService.createError(ErrorCode.AI_SERVICE_ERROR, `HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    if (!this.config.enableStreaming || !response.body) {
-      // 非流式响应
-      const data: any = await response.json();
-      const content = data.choices?.[0]?.message?.content || '';
-      callbacks.onChunk?.(content);
-      return content;
-    }
-
-    // 流式响应处理
-    return this.processStreamingResponse(response, callbacks);
-  }
-
-  /**
-   * 处理流式响应
-   */
-  private async processStreamingResponse(
-    response: Response,
-    callbacks: StreamingCallbacks
-  ): Promise<string> {
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    let fullResponse = '';
-    let buffer = '';
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.trim() === '') continue;
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices?.[0]?.delta?.content;
-
-              if (content) {
-                fullResponse += content;
-                callbacks.onChunk?.(content);
-              }
-            } catch (e) {
-              console.warn('Failed to parse SSE data:', data);
-            }
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    return fullResponse;
-  }
-
-  /**
-   * 解析AI响应 - 统一的解析方法
+   * 解析AI响应 - 简化版本
    */
   private parseAIResponse(
     aiResponse: any,
@@ -709,10 +313,9 @@ export class FrontendAIService {
     try {
       let response: any;
       if (aiResponse && typeof aiResponse === 'object') {
-        // tool-calling 返回 { tool, args }
         response = (aiResponse as any).args ?? aiResponse;
       } else if (typeof aiResponse === 'string') {
-        response = this.extractJsonFromResponse(aiResponse);
+        response = JSON.parse(aiResponse);
       } else {
         response = {};
       }
@@ -722,18 +325,9 @@ export class FrontendAIService {
       let summary = '';
       let explanation = '';
 
-      let sourceLang: string | undefined;
-      let targetLang: string | undefined;
-
       switch (type) {
         case 'check':
           modifiedText = response.correctedText || originalText;
-          // 添加调试日志
-          if (response.correctedText && response.correctedText !== originalText) {
-            console.log('Check result - Original text length:', originalText.length);
-            console.log('Check result - Modified text length:', response.correctedText.length);
-            console.log('Check result - Modified text preview:', response.correctedText.substring(0, 200) + '...');
-          }
           issues = (response.issues || []).map((issue: any) => ({
             type: issue.issueType || issue.type || 'TERMINOLOGY',
             severity: issue.severity || 'info',
@@ -749,29 +343,19 @@ export class FrontendAIService {
           modifiedText = response.polishedText || originalText;
           const polishChanges = Array.isArray(response.changes) ? response.changes : [];
           summary = `进行了 ${polishChanges.length} 处润色。`;
-          // explanation 作为补充说明，保留每条的 description/reason
           explanation = polishChanges.map((c: any) => c.description || c.reason).filter(Boolean).join('\n');
-          (response as any).changes = polishChanges;
           break;
         case 'rewrite':
           modifiedText = response.rewrittenText || originalText;
           const rewriteChanges = Array.isArray(response.changes) ? response.changes : [];
           summary = response.summary || `已根据指令改写文本。`;
           explanation = response.explanation || '';
-          (response as any).changes = rewriteChanges;
           break;
         case 'translate':
           modifiedText = response.translatedText || originalText;
-          sourceLang =
-            response.sourceLanguage || options.sourceLanguage || 'auto';
-          targetLang = response.targetLanguage || options.targetLanguage || 'en';
+          const sourceLang = response.sourceLanguage || options.sourceLanguage || 'auto';
+          const targetLang = response.targetLanguage || options.targetLanguage || 'en';
           summary = `从 ${sourceLang} 翻译为 ${targetLang}。`;
-          // 保留术语数组以供UI展示，不拼接进 explanation，避免与其他说明冲突
-          (response.terminology || []).forEach((t: any) => {
-            // 轻量校验字段
-            if (!t.original || !t.translated) return;
-          });
-          (response as any).terminology = response.terminology || [];
           break;
       }
 
@@ -783,156 +367,49 @@ export class FrontendAIService {
         issues,
         changes: (response as any).changes,
         summary,
-        explanation,
-        sourceLang,
-        targetLang,
-        // 传递术语数组用于 UI 展示（仅 translate 场景存在）
-        terminology: (response as any).terminology
+        explanation
       } as any;
     } catch (error) {
-      console.error(`Failed to parse ${type} response:`, error, 'Raw response:', aiResponse);
-      // 不要返回"成功"的结果，而是抛出错误让上层处理
-      throw ErrorHandlingService.createError(
-        ErrorCode.RESPONSE_FORMAT_ERROR,
-        `解析AI响应失败: ${this.formatErrorMessage(error)}`
-      );
+      throw createError(ErrorCode.RESPONSE_FORMAT_ERROR, `Failed to parse ${type} response: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  /**
-   * 解析 Tool Call 参数 - 增强版本，处理特殊字符
-   */
-  private parseToolCallArguments(argsStr: string): any {
+  
+  private parseChunkResponse(aiResponse: any, expectedChunkId: string): any {
     try {
-      // 直接尝试解析
-      return JSON.parse(argsStr);
-    } catch (firstError) {
-      console.warn('Direct JSON parse failed, trying enhanced parsing:', firstError);
-
-      try {
-        // 尝试修复常见的 JSON 问题
-        let fixedArgs = argsStr;
-
-        // 1. 修复字符串值中的控制字符
-        fixedArgs = fixedArgs.replace(/"([^"]*?)"/g, (match, content) => {
-          // 只处理字符串值，不处理属性名
-          if (content.includes(':') && !content.includes('\n') && !content.includes('\r') && !content.includes('\t')) {
-            return match; // 这可能是属性名，不要修改
-          }
-
-          let fixed = content;
-          // 转义未转义的特殊字符
-          fixed = fixed.replace(/\\/g, '\\\\'); // 先转义反斜杠
-          fixed = fixed.replace(/"/g, '\\"');   // 转义双引号
-          fixed = fixed.replace(/\n/g, '\\n');  // 转义换行符
-          fixed = fixed.replace(/\r/g, '\\r');  // 转义回车符
-          fixed = fixed.replace(/\t/g, '\\t');  // 转义制表符
-          fixed = fixed.replace(/`/g, '\\`');   // 转义反引号
-
-          return `"${fixed}"`;
-        });
-
-        // 2. 修复末尾多余的逗号
-        fixedArgs = fixedArgs.replace(/,(\s*[}\]])/g, '$1');
-
-        return JSON.parse(fixedArgs);
-      } catch (secondError) {
-        console.error('Enhanced JSON parse also failed:', secondError);
-
-        // 最后尝试：提取可能的 JSON 对象
-        try {
-          const match = argsStr.match(/\{[\s\S]*\}/);
-          if (match) {
-            return JSON.parse(match[0]);
-          }
-        } catch (thirdError) {
-          console.error('JSON extraction failed:', thirdError);
-        }
-
-        // 如果所有方法都失败，抛出原始错误
-        throw firstError;
+      let response: any;
+      if (aiResponse && typeof aiResponse === 'object') {
+        response = (aiResponse as any).args ?? aiResponse;
+      } else if (typeof aiResponse === 'string') {
+        response = JSON.parse(aiResponse);
+      } else {
+        response = {};
       }
+
+      if (expectedChunkId && response.chunk_id !== expectedChunkId) {
+        response.chunk_id = expectedChunkId;
+      }
+
+      if (Array.isArray(response.suggestions)) {
+        response.suggestions = response.suggestions.map((suggestion: any) => ({
+          chunk_id: suggestion.chunk_id || expectedChunkId,
+          type: suggestion.type,
+          description: suggestion.description,
+          original_text: suggestion.original_text,
+          suggested_text: suggestion.suggested_text,
+          severity: suggestion.severity
+        }));
+      } else {
+        response.suggestions = [];
+      }
+
+      return response;
+    } catch (error) {
+      throw createError(ErrorCode.RESPONSE_FORMAT_ERROR, 'Failed to parse chunk response');
     }
   }
 
-  /**
-   * 从AI响应中提取JSON - 统一的解析方法
-   */
-  private extractJsonFromResponse(response: string): any {
-    console.log('Extracting JSON from response:', response);
-
-    const sanitize = (text: string) => {
-      // 去掉BOM
-      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-      // 去除Markdown代码块围栏
-      text = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
-      // 统一换行
-      text = text.replace(/\r\n/g, '\n');
-      // 去除多余反引号
-      text = text.replace(/```/g, '');
-      // 去除末尾逗号（简单修复）
-      text = text.replace(/,\s*([}\]])/g, '$1');
-      // 替换非标准引号为标准引号（保守处理）
-      text = text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-
-      // 增强：修复字符串中未转义的特殊字符
-      try {
-        // 先尝试解析，如果失败再进行修复
-        JSON.parse(text);
-        return text.trim();
-      } catch {
-        // 修复未转义的反引号
-        text = text.replace(/(?<!\\)`/g, '\\`');
-        // 修复未转义的换行符
-        text = text.replace(/(?<!\\)\n/g, '\\n');
-        text = text.replace(/(?<!\\)\r/g, '\\r');
-        // 修复未转义的制表符
-        text = text.replace(/(?<!\\)\t/g, '\\t');
-        return text.trim();
-      }
-    };
-
-    // 策略1：直接解析完整JSON
-    try {
-      return JSON.parse(sanitize(response));
-    } catch {}
-
-    // 策略2：提取```json fenced代码块
-    const fenced = response.match(/```json\s*([\s\S]*?)```/i);
-    if (fenced && fenced[1]) {
-      try {
-        return JSON.parse(sanitize(fenced[1]));
-      } catch {}
-    }
-
-    // 策略3：括号栈提取最外层完整JSON
-    const extractByBraceStack = (text: string): string | null => {
-      let start = -1, depth = 0;
-      for (let i = 0; i < text.length; i++) {
-        const ch = text[i];
-        if (ch === '{') {
-          if (depth === 0) start = i;
-          depth++;
-        } else if (ch === '}') {
-          depth--;
-          if (depth === 0 && start !== -1) {
-            return text.slice(start, i + 1);
-          }
-        }
-      }
-      return null;
-    };
-
-    const byStack = extractByBraceStack(response);
-    if (byStack) {
-      try {
-        return JSON.parse(sanitize(byStack));
-      } catch {}
-    }
-
-    throw new Error('在AI响应中未找到或无法解析有效的JSON结构');
-  }
-
+  
   /**
    * 计算文本差异 - 使用diff库的高效算法
    */
@@ -941,10 +418,7 @@ export class FrontendAIService {
       return [{ type: 'equal', value: originalText }];
     }
 
-    // 使用diff库进行词级diff，支持中英混排
     const wordDiff = diffWords(originalText, modifiedText);
-
-    // 转换为DocMate的Diff接口格式
     const result: Diff[] = wordDiff.map(part => {
       if (part.added) {
         return { type: 'insert', value: part.value };
@@ -955,7 +429,6 @@ export class FrontendAIService {
       }
     });
 
-    // 合并相邻的相同类型的diff以提高可读性
     return this.mergeDiffs(result);
   }
 
@@ -986,45 +459,48 @@ export class FrontendAIService {
     return merged;
   }
 
-  private getCheckToolOptions() {
+  /**
+   * 获取chunk检查工具选项 - 简化版本
+   */
+  private getChunkCheckToolOptions(chunkId: string) {
     return {
       tools: [
         {
           type: 'function',
           function: {
-            name: 'return_check_result',
-            description: '返回文本检查的结构化结果',
+            name: 'return_chunk_check_result',
+            description: '返回文本块检查的结构化结果',
             parameters: {
               type: 'object',
               properties: {
-                correctedText: { type: 'string', description: '修正后的完整文本' },
-                issues: {
+                chunk_id: { type: 'string', description: '被检查的文本块的唯一标识符' },
+                suggestions: {
                   type: 'array',
                   items: {
                     type: 'object',
                     properties: {
-                      issueType: { type: 'string', enum: ['TYPO','PUNCTUATION','SPACING','FORMATTING','STYLE','HYPERLINK_ERROR','TERMINOLOGY'] },
-                      severity: { type: 'string', enum: ['error','warning','info'] },
-                      originalText: { type: 'string', description: '检测到问题的原始文本片段' },
-                      suggestedText: { type: 'string', description: '建议修正后的文本片段' },
-                      message: { type: 'string', description: '对问题的简短描述' },
-                      suggestion: { type: 'string', description: '对修正的详细解释和说明' },
-                      start: { type: 'number', description: '问题在原文中的起始位置索引' },
-                      end: { type: 'number', description: '问题在原文中的结束位置索引' }
+                      chunk_id: { type: 'string', description: '被检查的文本块的唯一标识符' },
+                      type: { type: 'string', enum: ['TYPO', 'PUNCTUATION', 'SPACING', 'FORMATTING', 'STYLE', 'HYPERLINK_ERROR', 'TERMINOLOGY'] },
+                      description: { type: 'string', description: '对问题的简短描述' },
+                      original_text: { type: 'string', description: '核心文本中的错误部分' },
+                      suggested_text: { type: 'string', description: '修改后的正确文本' },
+                      severity: { type: 'string', enum: ['error', 'warning', 'info'], description: '严重程度' }
                     },
-                    required: ['issueType','severity','originalText','suggestedText','message','suggestion','start','end']
+                    required: ['chunk_id', 'type', 'description', 'original_text', 'suggested_text', 'severity']
                   }
                 }
               },
-              required: ['correctedText','issues']
+              required: ['chunk_id', 'suggestions']
             }
           }
         }
       ],
-      toolChoice: { type: 'function', function: { name: 'return_check_result' } },
+      toolChoice: { type: 'function', function: { name: 'return_chunk_check_result' } },
       temperature: 0.1
     };
   }
+
+  // 删除复杂的getCheckToolOptions方法
 
   private getPolishToolOptions() {
     return {
@@ -1135,194 +611,6 @@ export class FrontendAIService {
   }
 
   /**
-   * 获取v1.2结构化检查的工具选项 - 使用真正的tools调用
-   */
-  private getV12StructuredCheckToolOptions(requestId: string = '', chunkId: string = '') {
-    return {
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'return_chunk_check_result',
-            description: '返回文本块检查的结构化结果，确保JSON格式稳定',
-            parameters: {
-              type: 'object',
-              properties: {
-                chunk_id: {
-                  type: 'string',
-                  description: '被检查的文本块的唯一标识符'
-                },
-                suggestions: {
-                  type: 'array',
-                  description: '检查结果建议列表',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      chunk_id: {
-                        type: 'string',
-                        description: '被检查的文本块的唯一标识符（必须与父级chunk_id一致）'
-                      },
-                      type: {
-                        type: 'string',
-                        enum: ['TYPO', 'PUNCTUATION', 'SPACING', 'FORMATTING', 'STYLE', 'HYPERLINK_ERROR', 'TERMINOLOGY'],
-                        description: '问题类型'
-                      },
-                      description: {
-                        type: 'string',
-                        description: '对问题的简短描述'
-                      },
-                      original_text: {
-                        type: 'string',
-                        description: '核心文本中的错误部分'
-                      },
-                      suggested_text: {
-                        type: 'string',
-                        description: '修改后的正确文本'
-                      },
-                      severity: {
-                        type: 'string',
-                        enum: ['error', 'warning', 'info'],
-                        description: '严重程度'
-                      }
-                    },
-                    required: ['chunk_id', 'type', 'description', 'original_text', 'suggested_text', 'severity']
-                  }
-                }
-              },
-              required: ['chunk_id', 'suggestions']
-            }
-          }
-        }
-      ],
-      toolChoice: { type: 'function', function: { name: 'return_chunk_check_result' } },
-      temperature: 0.1,
-      max_tokens: 5000,
-      requestId: requestId
-    };
-  }
-
-  /**
-   * 解析结构化AI响应（v1.2架构）- 支持tools调用和普通JSON响应，自动修复chunk_id
-   */
-  private parseStructuredAIResponse(aiResponse: any, expectedChunkId?: string): any {
-    try {
-      let response: any;
-      let sourceType = '';
-
-      if (aiResponse && typeof aiResponse === 'object') {
-        // tool-calling 返回 { tool, args }
-        if (aiResponse.tool && aiResponse.args) {
-          response = aiResponse.args;
-          sourceType = 'tool-call';
-          console.log('Parsing response from tool call');
-        } else {
-          response = aiResponse;
-          sourceType = 'direct-object';
-        }
-      } else if (typeof aiResponse === 'string') {
-        response = this.extractJsonFromResponse(aiResponse);
-        sourceType = 'extracted-json';
-        console.log('Parsed JSON from string response');
-      } else {
-        response = {};
-        sourceType = 'empty';
-      }
-
-      console.log('Response parsing details:', {
-        sourceType,
-        responseType: typeof response,
-        hasSuggestions: Array.isArray(response?.suggestions),
-        suggestionsCount: Array.isArray(response?.suggestions) ? response.suggestions.length : 0,
-        expectedChunkId: expectedChunkId
-      });
-
-      // 验证响应格式
-      if (!response || typeof response !== 'object') {
-        throw new Error(`Invalid response format: ${typeof response}`);
-      }
-
-      // 处理tools调用返回的格式
-      if (sourceType === 'tool-call') {
-        // tools调用返回的格式可能直接是suggestions数组
-        if (response.suggestions && Array.isArray(response.suggestions)) {
-          console.log('Using suggestions from tool call response');
-        } else {
-          console.warn('Tool call response missing suggestions array');
-          response.suggestions = [];
-        }
-      } else {
-        // 处理普通JSON响应格式
-        if (!Array.isArray(response.suggestions)) {
-          console.warn('Response does not contain suggestions array, creating empty one');
-          response.suggestions = [];
-        }
-      }
-
-      // 自动修复chunk_id
-      if (expectedChunkId) {
-        console.log(`Auto-fixing chunk_id to expected value: ${expectedChunkId}`);
-
-        // 修复顶级chunk_id
-        if (!response.chunk_id || response.chunk_id !== expectedChunkId) {
-          console.log(`Fixing top-level chunk_id from "${response.chunk_id}" to "${expectedChunkId}"`);
-          response.chunk_id = expectedChunkId;
-        }
-
-        // 修复suggestions中的chunk_id
-        for (const suggestion of response.suggestions) {
-          if (!suggestion.chunk_id || suggestion.chunk_id !== expectedChunkId) {
-            console.log(`Fixing suggestion chunk_id from "${suggestion.chunk_id}" to "${expectedChunkId}"`);
-            suggestion.chunk_id = expectedChunkId;
-          }
-        }
-      }
-
-      // 验证和标准化suggestions格式
-      const validSuggestions = [];
-      for (const suggestion of response.suggestions) {
-        if (this.isValidSuggestion(suggestion)) {
-          validSuggestions.push(this.normalizeSuggestion(suggestion));
-        } else {
-          console.warn('Invalid suggestion format, skipping:', suggestion);
-        }
-      }
-
-      response.suggestions = validSuggestions;
-      console.log(`Successfully parsed ${validSuggestions.length} valid suggestions`);
-
-      return response;
-    } catch (error) {
-      console.error('Failed to parse structured AI response:', error, 'Raw response:', aiResponse);
-      throw ErrorHandlingService.createError(
-        ErrorCode.RESPONSE_FORMAT_ERROR,
-        `解析结构化AI响应失败: ${this.formatErrorMessage(error)}`
-      );
-    }
-  }
-
-  /**
-   * 验证suggestion格式是否有效
-   */
-  private isValidSuggestion(suggestion: any): boolean {
-    const requiredFields = ['type', 'description', 'original_text', 'suggested_text', 'severity'];
-    return requiredFields.every(field => field in suggestion && suggestion[field] !== null && suggestion[field] !== undefined);
-  }
-
-  /**
-   * 标准化suggestion格式
-   */
-  private normalizeSuggestion(suggestion: any): any {
-    return {
-      chunk_id: suggestion.chunk_id || '',
-      type: suggestion.type,
-      description: suggestion.description,
-      original_text: suggestion.original_text,
-      suggested_text: suggestion.suggested_text,
-      severity: suggestion.severity
-    };
-  }
-
-  /**
    * 将DiagnosticInfo转换为AIResult格式（保持向后兼容）
    */
   private convertDiagnosticsToAIResult(diagnostics: any[], originalText: string): AIResult {
@@ -1367,7 +655,7 @@ export class FrontendAIService {
       diffs,
       issues,
       summary: `发现 ${issues.length} 个问题`,
-      explanation: '使用v1.2架构进行精确的文本检查'
+      explanation: '进行精确的文本检查'
     };
   }
 
