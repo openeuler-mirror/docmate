@@ -15,6 +15,7 @@ DocMate is a VS Code intelligent writing assistant specifically designed for ope
 - **Expression Optimization**: Enhance document clarity and professionalism
 - **Structure Adjustment**: Optimize paragraph structure and logical flow
 - **Language Refinement**: Make technical expressions more concise and clear
+- **Intelligent Chunk Processing**: Markdown structure-aware chunking algorithm for optimized long document processing
 
 ### 🌐 Multi-language Translation
 
@@ -51,8 +52,9 @@ DocMate is a VS Code intelligent writing assistant specifically designed for ope
 Click the DocMate icon in the activity bar to open the dedicated sidebar:
 
 - View processing results and suggestions
-- Apply improvement suggestions with one click
+- Apply improvement suggestions with one click (supports word-level precision replacement)
 - Adjust function parameter settings
+- Smart issue management (supports line number display and batch processing)
 
 ## ⚙️ Configuration Options
 
