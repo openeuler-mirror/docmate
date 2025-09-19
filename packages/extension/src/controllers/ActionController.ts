@@ -46,12 +46,10 @@ export class ActionController {
    * 初始化前端AI服务
    */
   private async initializeFrontendAIService(): Promise<void> {
-    // 获取完整配置（包含默认值）
     const fullConfig = await userConfigService.getFullAIConfig();
 
     let aiConfig;
     if (fullConfig && this.isValidUserConfig(fullConfig)) {
-      // 使用用户配置（已包含默认值）
       aiConfig = {
         apiKey: fullConfig.apiKey,
         baseUrl: fullConfig.baseUrl,
@@ -59,12 +57,7 @@ export class ActionController {
         timeout: fullConfig.timeout!,
         maxRetries: fullConfig.maxRetries!
       };
-      console.log('ActionController: Using user config for AI service', {
-        timeout: aiConfig.timeout,
-        maxRetries: aiConfig.maxRetries
-      });
     } else {
-      // 回退到VS Code设置 + 默认配置
       const vsCodeConfig = this.getAIConfig();
       const defaultConfig = userConfigService.getDefaultConfig();
       aiConfig = {
@@ -74,13 +67,6 @@ export class ActionController {
         timeout: vsCodeConfig.timeout || defaultConfig.timeout!,
         maxRetries: vsCodeConfig.maxRetries || defaultConfig.maxRetries!
       };
-      console.log('ActionController: Using VS Code config for AI service', {
-        hasApiKey: !!aiConfig.apiKey,
-        hasBaseUrl: !!aiConfig.baseUrl,
-        model: aiConfig.model,
-        timeout: aiConfig.timeout,
-        maxRetries: aiConfig.maxRetries
-      });
     }
 
     this.frontendAIService = new FrontendAIService(aiConfig);
@@ -126,138 +112,107 @@ export class ActionController {
    * 处理命令
    */
   async handle(command: string, payload: any): Promise<any> {
-    console.log('ActionController: Handling command:', command, 'with payload:', payload);
-
     try {
       let result;
       switch (command) {
         case 'check':
-          console.log('ActionController: Executing check command');
           result = await this.handleCheck(payload);
           break;
         case 'polish':
-          console.log('ActionController: Executing polish command');
           result = await this.handlePolish(payload);
           break;
         case 'translate':
-          console.log('ActionController: Executing translate command');
-          result = await this.handleTranslate(payload);
-          break;
         case 'fullTranslate':
-          console.log('ActionController: Executing fullTranslate command');
-          result = await this.handleTranslate({ ...payload, fullDocument: true });
+          result = await this.handleTranslate({ ...payload, fullDocument: command === 'fullTranslate' });
           break;
         case 'rewrite':
-          console.log('ActionController: Executing rewrite command');
           result = await this.handleRewrite(payload);
           break;
         case 'applySuggestion':
-          console.log('ActionController: Executing applySuggestion command');
           result = await this.handleApplySuggestion(payload);
           break;
         case 'refresh':
-          console.log('ActionController: Executing refresh command');
           result = await this.handleRefresh(payload);
           break;
         case 'settings':
-          console.log('ActionController: Executing settings command (redirecting to config)');
-          result = await this.handleConfig(payload);
-          break;
         case 'config':
-          console.log('ActionController: Executing config command');
           result = await this.handleConfig(payload);
           break;
         case 'cancel':
-          console.log('ActionController: Executing cancel command');
           result = await this.handleCancel();
           break;
         case 'clearDiagnostics':
-          console.log('ActionController: Executing clearDiagnostics command');
           result = await this.handleClearDiagnostics(payload);
           break;
         default:
           throw ErrorHandlingService.createError(ErrorCode.UNKNOWN_COMMAND, `Unknown command: ${command}`);
       }
 
-      // 记录成功日志（不使用错误日志方法）
-      console.log(`DocMate: ActionController.executeCommand - ${command} completed successfully`);
       return result;
     } catch (error) {
-      // 不要强制使用 UNKNOWN_ERROR，让 fromError 自己判断错误类型
       const docMateError = ErrorHandlingService.fromError(error);
       ErrorHandlingService.logError(docMateError, `ActionController.executeCommand - ${command}`);
       throw docMateError;
     }
   }
 
-  
-  /**
-   * 处理检查命令 - 支持v1.2架构
-   */
-  private async handleCheck(payload: any): Promise<AIResult> {
-    let { text, textSource, options = {} } = payload;
-
-    // 如果没有传入文本，自动获取全文
-    if (!text || !text.trim()) {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
-      }
-
-      // 检查是否有选择的文本
-      if (!editor.selection.isEmpty) {
-        text = editor.document.getText(editor.selection);
-        textSource = 'selected';
-      } else {
-        text = editor.document.getText();
-        textSource = 'full';
-      }
+  private getTextFromEditor(text?: string, textSource?: string): { text: string; textSource: string } {
+    if (text && text.trim()) {
+      return { text, textSource: textSource || 'provided' };
     }
 
-    if (!text || typeof text !== 'string' || !text.trim()) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
+    }
+
+    if (!editor.selection.isEmpty) {
+      return {
+        text: editor.document.getText(editor.selection),
+        textSource: 'selected'
+      };
+    }
+
+    return {
+      text: editor.document.getText(),
+      textSource: 'full'
+    };
+  }
+
+  private async handleCheck(payload: any): Promise<AIResult> {
+    let { text, textSource, options = {} } = payload;
+    const { text: finalText, textSource: finalTextSource } = this.getTextFromEditor(text, textSource);
+
+    if (!finalText || typeof finalText !== 'string' || !finalText.trim()) {
       throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for check operation');
     }
 
-    // 确保AI服务已准备就绪
     await this.ensureAIServiceReady();
-
-    // 直接使用v1.2架构
-    const result = await this.frontendAIService!.check(text, {
+    const result = await this.frontendAIService!.check(finalText, {
       ...options,
-      textSource
+      textSource: finalTextSource
     });
 
-    // 显示诊断信息
     await this.showV12Diagnostics(result);
-
     return result;
   }
 
-  /**
-   * 显示v1.2架构的诊断信息
-   */
   private async showV12Diagnostics(result: AIResult): Promise<void> {
     try {
       const { DiagnosticService } = await import('../services/DiagnosticService');
       const editor = vscode.window.activeTextEditor;
 
       if (editor && result.issues && result.issues.length > 0) {
-        console.log('ActionController: Showing v1.2 diagnostics for', result.issues.length, 'issues');
-
-        // 将issues转换为DiagnosticInfo格式
         const diagnostics = result.issues.map(issue => {
           const startLine = issue.range[0] || 0;
           const endLine = issue.range[1] || startLine;
-
-          // 如果 issue 中没有 original_text，从文档中提取
           let originalText = issue.original_text || '';
-          if (!originalText && editor) {
+
+          if (!originalText) {
             try {
-              const lineText = editor.document.lineAt(startLine).text;
-              // 尝试从消息中推断问题文本，或者使用整行文本
-              originalText = lineText;
+              originalText = editor.document.lineAt(startLine).text;
             } catch (e) {
-              console.warn('Failed to extract original text from document:', e);
+              originalText = '';
             }
           }
 
@@ -276,193 +231,82 @@ export class ActionController {
           };
         });
 
-        console.log('ActionController: Processed diagnostics:', diagnostics);
         DiagnosticService.showDiagnostics(editor.document.uri, diagnostics);
-        console.log('ActionController: Diagnostics displayed successfully');
-      } else {
-        console.log('ActionController: No issues to display or no active editor');
       }
     } catch (error) {
       console.error('Failed to show v1.2 diagnostics:', error);
     }
   }
 
-  /**
-   * 处理润色命令 - 返回新的diff格式
-   */
   private async handlePolish(payload: any): Promise<AIResult> {
     let { text, textSource, options = {} } = payload;
+    const { text: finalText, textSource: finalTextSource } = this.getTextFromEditor(text, textSource);
 
-    // 如果没有传入文本，自动获取全文
-    if (!text || !text.trim()) {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
-      }
-
-      // 检查是否有选择的文本
-      if (!editor.selection.isEmpty) {
-        text = editor.document.getText(editor.selection);
-        textSource = 'selected';
-      } else {
-        text = editor.document.getText();
-        textSource = 'full';
-      }
-    }
-
-    if (!text || typeof text !== 'string' || !text.trim()) {
+    if (!finalText || typeof finalText !== 'string' || !finalText.trim()) {
       throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for polish operation');
     }
 
-    // 使用前端AI服务
-    if (!this.frontendAIService) {
-      throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
-    }
-
-    console.log('ActionController: Polish - text length:', text.length);
-    console.log('ActionController: Polish - textSource:', textSource);
-
-    // 使用前端AI服务，传递文本来源信息
-    const result = await this.frontendAIService.polish(text, { ...options, textSource });
-    return result;
+    await this.ensureAIServiceReady();
+    return this.frontendAIService!.polish(finalText, { ...options, textSource: finalTextSource });
   }
 
-  /**
-   * 处理翻译命令 - 返回新的diff格式
-   */
   private async handleTranslate(payload: any): Promise<AIResult> {
     let { text, textSource, options = {}, fullDocument } = payload;
-
-    // 统一文本处理逻辑
-    let finalText = text;
-
-    // 如果没有传入文本，自动获取全文
-    if (!text || !text.trim()) {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
-      }
-      finalText = editor.document.getText();
-      textSource = 'full';
-    }
-
-    // 兼容旧的fullDocument逻辑
-    if (fullDocument && !finalText) {
-      const editor = vscode.window.activeTextEditor;
-      if (editor) {
-        finalText = editor.document.getText();
-      } else {
-        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found for full document translation');
-      }
-    }
-
-    if (!finalText || typeof finalText !== 'string' || !finalText.trim()) {
-      throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for translate operation');
-    }
 
     if (!options.targetLanguage) {
       throw ErrorHandlingService.createError('MISSING_TARGET_LANGUAGE' as any, 'Target language is required for translation');
     }
 
-    
-    // 使用前端AI服务
-    if (!this.frontendAIService) {
-      throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
+    if (fullDocument) {
+      text = ''; // 强制使用全文
     }
 
-    // 根据文本来源决定处理方式
-    // 统一调用translate服务
-    const result = await this.frontendAIService.translate(finalText, options);
+    const { text: finalText, textSource: finalTextSource } = this.getTextFromEditor(text, textSource);
 
-    return result;
+    if (!finalText || typeof finalText !== 'string' || !finalText.trim()) {
+      throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for translate operation');
+    }
+
+    await this.ensureAIServiceReady();
+    return this.frontendAIService!.translate(finalText, options);
   }
 
 
-  /**
-   * 处理改写命令
-   */
   private async handleRewrite(payload: any): Promise<AIResult> {
     let { text, textSource, conversationHistory = [], originalText } = payload;
-
-    // text是改写指令，originalText是要改写的文本
     const instruction = text || payload.instruction || '请改写这段文本，使其更加清晰和简洁';
 
     if (!instruction || typeof instruction !== 'string') {
       throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, '改写指令不能为空');
     }
 
-    // 如果没有传入原始文本，自动获取全文
-    if (!originalText || !originalText.trim()) {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        throw ErrorHandlingService.createError(ErrorCode.NO_ACTIVE_EDITOR, 'No active editor found');
-      }
+    const { text: finalText, textSource: finalTextSource } = this.getTextFromEditor(originalText, textSource);
 
-      // 检查是否有选择的文本
-      if (!editor.selection.isEmpty) {
-        originalText = editor.document.getText(editor.selection);
-        textSource = 'selected';
-      } else {
-        originalText = editor.document.getText();
-        textSource = 'full';
-      }
-    }
-
-    if (!originalText || !originalText.trim()) {
+    if (!finalText || !finalText.trim()) {
       throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, '没有找到要改写的文本内容');
     }
 
-    // 使用前端AI服务
-    if (!this.frontendAIService) {
-      throw ErrorHandlingService.createError(ErrorCode.SERVICE_NOT_INITIALIZED, 'Frontend AI service not initialized');
-    }
-
-    console.log('ActionController: Rewrite - instruction:', instruction);
-    console.log('ActionController: Rewrite - originalText length:', originalText.length);
-    console.log('ActionController: Rewrite - textSource:', textSource);
-
-    const result = await this.frontendAIService.rewrite(originalText, instruction, conversationHistory);
-
-    return result;
+    await this.ensureAIServiceReady();
+    return this.frontendAIService!.rewrite(finalText, instruction, conversationHistory);
   }
 
-  /**
-   * 处理应用建议命令
-   */
   private async handleApplySuggestion(payload: any): Promise<{ status: string; message?: string }> {
     const { text, originalText } = payload;
-    console.log('ActionController: handleApplySuggestion called with text:', text);
-    console.log('ActionController: originalText:', originalText);
 
     if (!text || typeof text !== 'string') {
       throw ErrorHandlingService.createError(ErrorCode.INVALID_TEXT, 'Text is required for apply suggestion operation');
     }
 
     try {
-      // 使用SmartApplyService进行智能应用
       const result = await SmartApplyService.applyTextSuggestion(text, originalText);
 
       if (result.success) {
-        // 应用成功，清除所有DocMate波浪线
-        try {
-          const { DiagnosticService } = await import('../services/DiagnosticService');
-          const editor = vscode.window.activeTextEditor;
+        await this.clearAllDiagnostics();
 
-          if (editor) {
-            console.log('ActionController: Clearing all DocMate diagnostics after applying suggestion');
-            DiagnosticService.clearDiagnostics(editor.document.uri);
-            console.log('ActionController: All diagnostics cleared successfully');
-          }
-        } catch (error) {
-          console.error('ActionController: Failed to clear diagnostics:', error);
-        }
-
-        // 应用成功，标记为已处理
         if (this.dismissedStateService && originalText) {
           const editor = vscode.window.activeTextEditor;
           const fileUri = editor?.document.uri.toString();
           await this.dismissedStateService.markDismissed(originalText, fileUri);
-          console.log('ActionController: Marked suggestion as dismissed');
         }
 
         return {
@@ -476,11 +320,7 @@ export class ActionController {
         );
       }
     } catch (error) {
-      console.error('ActionController: Apply suggestion failed:', error);
-
-      // 转换为友好错误
-      const friendlyError = ErrorHandlingService.fromError(error);
-      throw friendlyError;
+      throw ErrorHandlingService.fromError(error);
     }
   }
 
@@ -504,42 +344,27 @@ export class ActionController {
     return this.dismissedStateService.isDismissed(originalText, fileUri);
   }
 
-  /**
-   * 处理刷新命令
-   */
   private async handleRefresh(_payload: any): Promise<{ status: string }> {
-    // 重新加载配置
     this.updateConfiguration();
-
-    // 重新加载术语库
     this.terminologyService = new TerminologyService();
-
     return { status: 'refreshed' };
   }
 
-  /**
-   * 处理配置命令
-   */
   private async handleConfig(payload: any): Promise<any> {
     const { action, config } = payload;
 
     switch (action) {
       case 'status':
-        // 检查配置状态
-        console.log('ActionController: Checking config status');
         const status = await userConfigService.getConfigStatus();
-        const result = {
+        return {
           action: 'status',
           isConfigured: status.isConfigured,
           hasBaseUrl: status.hasBaseUrl,
           hasApiKey: status.hasApiKey,
           hasModel: status.hasModel
         };
-        console.log('ActionController: Config status result:', result);
-        return result;
 
       case 'get':
-        // 获取当前配置
         const currentConfig = await userConfigService.getAIConfig();
         return {
           action: 'get',
@@ -547,13 +372,9 @@ export class ActionController {
         };
 
       case 'save':
-        // 保存配置
         try {
           await userConfigService.saveAIConfig(config);
-
-          // 重新初始化前端AI服务
           await this.initializeFrontendAIService();
-
           return {
             action: 'saved',
             success: true,
@@ -568,12 +389,8 @@ export class ActionController {
         }
 
       case 'test':
-        // 测试连接
         try {
-          // 获取完整配置（包含默认值）
           const fullConfig = await userConfigService.getFullAIConfig();
-
-          // 创建临时的AI服务实例来测试连接
           const testService = new FrontendAIService({
             apiKey: config.apiKey,
             baseUrl: config.baseUrl,
@@ -581,10 +398,7 @@ export class ActionController {
             timeout: fullConfig.testTimeout!,
             maxRetries: 1
           });
-
-          // 发送一个简单的测试请求
           await testService.callAIService('Hello, this is a test message.');
-
           return {
             action: 'test',
             success: true,
@@ -600,12 +414,8 @@ export class ActionController {
         }
 
       case 'clear':
-        // 清除配置
         await userConfigService.clearConfig();
-
-        // 重新初始化前端AI服务
         await this.initializeFrontendAIService();
-
         return {
           action: 'cleared',
           success: true
@@ -667,25 +477,17 @@ export class ActionController {
     };
   }
 
-  /**
-   * 处理取消命令
-   */
   private async handleCancel(): Promise<any> {
-    console.log('ActionController: Handling cancel command');
-
     try {
-      // 取消前端AI服务的当前请求
       if (this.frontendAIService) {
         this.frontendAIService.cancelRequest();
       }
-
       return {
         action: 'cancelled',
         success: true,
         message: '操作已取消'
       };
     } catch (error) {
-      console.error('ActionController: Cancel failed:', error);
       const docMateError = ErrorHandlingService.fromError(error, ErrorCode.UNKNOWN_ERROR);
       return {
         action: 'cancel',
@@ -695,21 +497,26 @@ export class ActionController {
     }
   }
 
-  private async handleClearDiagnostics(payload: any): Promise<any> {
-    console.log('ActionController: Handling clearDiagnostics command - clearing all DocMate diagnostics');
-
+  private async clearAllDiagnostics(): Promise<void> {
     try {
-      // 清除所有DocMate插件的诊断信息
+      const { DiagnosticService } = await import('../services/DiagnosticService');
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        DiagnosticService.clearDiagnostics(editor.document.uri);
+      }
+    } catch (error) {
+      console.error('Failed to clear diagnostics:', error);
+    }
+  }
+
+  private async handleClearDiagnostics(payload: any): Promise<any> {
+    try {
       const { DiagnosticService } = await import('../services/DiagnosticService');
       const editor = vscode.window.activeTextEditor;
 
       if (editor) {
-        // 直接清除当前文档的所有诊断信息
-        console.log('ActionController: Clearing all DocMate diagnostics for document');
         DiagnosticService.clearDiagnostics(editor.document.uri);
-        console.log('ActionController: All DocMate diagnostics cleared');
 
-        // 标记为已处理（如果需要）
         const { originalText } = payload;
         if (this.dismissedStateService && originalText) {
           const fileUri = editor.document.uri.toString();
@@ -719,10 +526,7 @@ export class ActionController {
               await this.dismissedStateService.markDismissed(text, fileUri);
             }
           }
-          console.log('ActionController: Marked diagnostics as dismissed');
         }
-      } else {
-        console.warn('ActionController: No active editor found for clearing diagnostics');
       }
 
       return {
@@ -731,7 +535,7 @@ export class ActionController {
         message: '已清除所有波浪线'
       };
     } catch (error) {
-      console.error('ActionController: Error clearing diagnostics:', error);
+      console.error('Error clearing diagnostics:', error);
       return {
         action: 'cleared',
         success: false,
