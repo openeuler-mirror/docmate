@@ -242,7 +242,7 @@ export class ActionController {
         DiagnosticService.showDiagnostics(editor.document.uri, diagnostics);
       }
     } catch (error) {
-      console.error('Failed to show v1.2 diagnostics:', error);
+      console.error('Failed to show diagnostics:', error);
     }
   }
 

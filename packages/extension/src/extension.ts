@@ -12,7 +12,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // 初始化用户配置服务
   userConfigService.initialize(context);
 
-  // 初始化v1.2诊断服务
+  // 初始化诊断服务
   DiagnosticService.initialize(context);
   DiagnosticService.registerQuickFixCommands();
 

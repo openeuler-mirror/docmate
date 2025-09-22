@@ -299,7 +299,7 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-// ===== v1.2 新增类型定义 =====
+// ===== 新增类型定义 =====
 
 /**
  * 文本块结构 (Chunker产出)

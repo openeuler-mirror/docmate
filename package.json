@@ -2,7 +2,7 @@
   "name": "docmate",
   "displayName": "DocMate - openEuler Writing Assistant",
   "description": "AI-powered intelligent writing assistant for openEuler documentation with checking, polishing, translation and rewriting features",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "DelthinYee",
   "icon": "images/DocMate.png",
   "repository": {

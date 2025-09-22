@@ -5,7 +5,7 @@
 import { SingleChunkRequestPayload, CheckRule } from '@docmate/shared';
 
 /**
- * 构建文本检查提示词 - v1.2结构化版本
+ * 构建文本检查提示词 - 结构化版本
  * 支持分块处理和精确位置映射，使用tools调用确保JSON稳定性
  */
 export function buildSingleChunkPrompt(payload: SingleChunkRequestPayload, checkRules?: CheckRule[]): string {
