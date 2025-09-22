@@ -6,7 +6,10 @@ import {
   AIServiceConfig,
   AIResult,
   ChatMessage,
-  ErrorCode
+  ErrorCode,
+  CheckRule,
+  CheckRuleCommandPayload,
+  CheckRuleCommandResult
 } from '@docmate/shared';
 import { FrontendAIService } from '../services/FrontendAIService';
 import { DismissedStateService } from '../services/DismissedStateService';
@@ -138,6 +141,9 @@ export class ActionController {
         case 'config':
           result = await this.handleConfig(payload);
           break;
+        case 'checkRule':
+          result = await this.handleCheckRule(payload);
+          break;
         case 'cancel':
           result = await this.handleCancel();
           break;
@@ -188,9 +194,11 @@ export class ActionController {
     }
 
     await this.ensureAIServiceReady();
+    const checkRules = await userConfigService.getCheckRules();
     const result = await this.frontendAIService!.check(finalText, {
       ...options,
-      textSource: finalTextSource
+      textSource: finalTextSource,
+      checkRules
     });
 
     await this.showV12Diagnostics(result);
@@ -540,6 +548,99 @@ export class ActionController {
         action: 'cleared',
         success: false,
         message: '清除波浪线失败'
+      };
+    }
+  }
+
+  /**
+   * 处理检查规则管理命令
+   */
+  private async handleCheckRule(payload: any): Promise<CheckRuleCommandResult> {
+    const { checkRulePayload } = payload as { checkRulePayload: CheckRuleCommandPayload };
+
+    if (!checkRulePayload) {
+      return {
+        action: 'getAll',
+        success: false,
+        error: 'Missing checkRulePayload in payload'
+      };
+    }
+
+    const { action, rules, ruleIds } = checkRulePayload;
+
+    try {
+      switch (action) {
+        case 'getAll':
+          const allRules = await userConfigService.getCheckRules();
+          return {
+            action: 'getAll',
+            success: true,
+            rules: allRules
+          };
+
+        case 'update':
+          if (!rules || rules.length === 0) {
+            return {
+              action: 'update',
+              success: false,
+              error: 'No rules provided for update'
+            };
+          }
+          const updatedRules = await userConfigService.updateCheckRules(rules);
+          return {
+            action: 'update',
+            success: true,
+            rules: updatedRules,
+            message: '检查规则更新成功'
+          };
+
+        case 'create':
+          if (!rules || rules.length === 0) {
+            return {
+              action: 'create',
+              success: false,
+              error: 'No rules provided for creation'
+            };
+          }
+          const createdRules = await userConfigService.createCheckRules(
+            rules as Omit<CheckRule, 'id' | 'createdAt' | 'updatedAt' | 'isDefault'>[]
+          );
+          return {
+            action: 'create',
+            success: true,
+            rules: createdRules,
+            message: '检查规则创建成功'
+          };
+
+        case 'delete':
+          if (!ruleIds || ruleIds.length === 0) {
+            return {
+              action: 'delete',
+              success: false,
+              error: 'No rule IDs provided for deletion'
+            };
+          }
+          const remainingRules = await userConfigService.deleteCheckRules(ruleIds);
+          return {
+            action: 'delete',
+            success: true,
+            rules: remainingRules,
+            message: '检查规则删除成功'
+          };
+
+        default:
+          return {
+            action: action,
+            success: false,
+            error: `Unknown check rule action: ${action}`
+          };
+      }
+    } catch (error) {
+      const docMateError = ErrorHandlingService.fromError(error);
+      return {
+        action: action,
+        success: false,
+        error: docMateError.message
       };
     }
   }

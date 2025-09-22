@@ -6,6 +6,7 @@ interface CompactHeaderProps {
   hasConversations: boolean;
   onAuthChange: (isAuthenticated: boolean) => void;
   onNavigateToConfig: () => void;
+  onNavigateToCheckRules?: () => void;
 }
 
 export function CompactHeader({
@@ -14,6 +15,7 @@ export function CompactHeader({
   hasConversations,
   onAuthChange,
   onNavigateToConfig,
+  onNavigateToCheckRules,
 }: CompactHeaderProps) {
   return (
     <div className="compact-header">
@@ -49,6 +51,15 @@ export function CompactHeader({
         >
           ⚙️
         </button>
+        {onNavigateToCheckRules && (
+          <button
+            className="header-action-button rules-button"
+            onClick={onNavigateToCheckRules}
+            title="检查规则管理"
+          >
+            📋
+          </button>
+        )}
       </div>
     </div>
   );

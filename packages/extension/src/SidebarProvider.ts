@@ -71,8 +71,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    * 处理UI命令
    */
   private async handleUICommand(command: UICommand): Promise<void> {
-    console.log('SidebarProvider: Handling UI command:', command.command, 'with payload:', command.payload);
-
     try {
       // 显示加载状态
       this.sendToWebview({
@@ -81,9 +79,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       });
 
       // 执行命令
-      console.log('SidebarProvider: Calling ActionController.handle...');
       const result = await this._actionController.handle(command.command, command.payload);
-      console.log('SidebarProvider: ActionController.handle result:', result);
 
       // 根据命令类型发送不同格式的结果
       switch (command.command) {
@@ -106,7 +102,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           } as HostResult);
           break;
         case 'fullTranslate':
-          console.log('SidebarProvider: Handling fullTranslate result:', result);
           // 全文翻译：创建新文件并显示结果
           await this.handleFullTranslateResult(result);
           break;
@@ -141,6 +136,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           // 配置命令响应
           this.sendToWebview({
             command: 'config',
+            result: result
+          } as HostResult);
+          break;
+        case 'checkRule':
+          // 检查规则命令响应
+          this.sendToWebview({
+            command: 'checkRule',
             result: result
           } as HostResult);
           break;
@@ -181,7 +183,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    */
   private async handleFullTranslateResult(result: any) {
     try {
-      console.log('SidebarProvider: handleFullTranslateResult called with:', result);
       const { translatedText, suggestedFileName, sourceLang, targetLang } = result;
 
       // 创建新文档
@@ -231,8 +232,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
    * 发送错误消息到webview
    */
   private sendErrorToWebview(error: string | Error | DocMateError): void {
-    console.log('SidebarProvider: sendErrorToWebview called with:', error);
-
     let errorData: DocMateError;
 
     if (typeof error === 'string') {
@@ -243,14 +242,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       errorData = error as DocMateError;
     }
 
-    console.log('SidebarProvider: Processed error data:', errorData);
-
     // 生成友好消息
     const friendlyMessage = ErrorHandlingService.getFriendlyMessage(errorData);
     const suggestion = ErrorHandlingService.getSuggestedAction(errorData);
-
-    console.log('SidebarProvider: Generated friendly message:', friendlyMessage);
-    console.log('SidebarProvider: Generated suggestion:', suggestion);
 
     // 发送结构化错误信息
     const errorPayload = {
@@ -259,8 +253,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       details: errorData.details,
       suggestion: suggestion
     };
-
-    console.log('SidebarProvider: Sending error payload to webview:', errorPayload);
 
     this.sendToWebview({
       command: 'error',
@@ -330,9 +322,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           // Polyfill for process object
           window.process = window.process || { env: { NODE_ENV: 'production' } };
           window.global = window.global || window;
-          console.log('DocMate WebView loaded');
-          console.log('Script URI:', '${scriptUri}');
-          console.log('Style URI:', '${styleUri}');
         </script>
         <script nonce="${nonce}" src="${scriptUri}"></script>
       </body>

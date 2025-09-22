@@ -90,7 +90,7 @@ export class FrontendAIService {
       const chunkResults = await Promise.all(
         chunks.map(async (chunk, index) => {
           try {
-            const chunkPrompt = buildSingleChunkPrompt({ chunk });
+            const chunkPrompt = buildSingleChunkPrompt({ chunk }, options.checkRules);
             const chunkAiResponse = await this.callAIService(
               chunkPrompt,
               [],

@@ -4,7 +4,8 @@ import {
   ConversationItem,
   OperationState,
   generateId,
-  AIResult
+  AIResult,
+  CheckRule
 } from '@docmate/shared';
 import { vscodeApi } from './vscodeApi';
 import { ChatWindow } from './components/ChatWindow';
@@ -13,6 +14,7 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { ErrorMessage } from './components/ErrorMessage';
 import { CompactHeader } from './components/CompactHeader';
 import { ConfigProvider } from './components/ConfigProvider';
+import { CheckRuleManager } from './components/CheckRuleManager';
 import './App.css';
 
 interface AppState {
@@ -23,7 +25,7 @@ interface AppState {
   isAuthenticated: boolean;
   isConfigured: boolean;
   isCheckingConfig: boolean;
-  view: 'chat' | 'config';
+  view: 'chat' | 'config' | 'checkRules';
   errorInfo?: {
     message: string;
     code?: string;
@@ -33,6 +35,10 @@ interface AppState {
     maxRetries: number;
     timeout: number;
   };
+  checkRules?: CheckRule[];
+  isLoadingCheckRules: boolean;
+  checkRuleOperationSuccess?: boolean;
+  checkRuleOperationError?: string;
 }
 
 export default function App() {
@@ -47,6 +53,7 @@ export default function App() {
     isConfigured: false, // 默认未配置，需要检查
     isCheckingConfig: true, // 正在检查配置状态
     view: 'chat',
+    isLoadingCheckRules: false,
   });
 
   // 添加错误边界
@@ -71,7 +78,6 @@ export default function App() {
       const unsubscribe = vscodeApi.onMessage(handleMessage);
 
       // 检查配置状态
-      console.log('App: Sending config status request');
       vscodeApi.postMessage({
         command: 'config',
         payload: { action: 'status' }
@@ -134,6 +140,9 @@ export default function App() {
       case 'config':
         handleConfigMessage(message as HostResult);
         break;
+      case 'checkRule':
+        handleCheckRuleMessage(message as HostResult);
+        break;
     }
   };
 
@@ -141,11 +150,9 @@ export default function App() {
    * 处理配置消息
    */
   const handleConfigMessage = (message: HostResult) => {
-    console.log('App: Received config message:', message);
     const result = message.result;
 
     if (result && result.action === 'status') {
-      console.log('App: Processing config status:', result);
       setState(prev => ({
         ...prev,
         isConfigured: result.isConfigured || false,
@@ -160,7 +167,6 @@ export default function App() {
         });
       }
     } else if (result && result.action === 'saved') {
-      console.log('App: Processing config saved:', result);
       setState(prev => ({
         ...prev,
         isConfigured: true,
@@ -180,9 +186,41 @@ export default function App() {
         maxRetries: config.maxRetries || 3,
         timeout: config.timeout || 60000
       });
-      console.log('App: Updated user config:', {
-        maxRetries: config.maxRetries || 3,
-        timeout: config.timeout || 60000
+    }
+  };
+
+  /**
+   * 处理检查规则消息
+   */
+  const handleCheckRuleMessage = (message: HostResult) => {
+    const result = message.result;
+
+    if (result) {
+      setState(prev => {
+        const newState = { ...prev };
+
+        // 更新加载状态
+        newState.isLoadingCheckRules = false;
+
+        // 处理不同的操作结果
+        if (result.action === 'getAll') {
+          newState.checkRules = result.rules || [];
+          newState.checkRuleOperationSuccess = result.success;
+        } else if (result.action === 'update') {
+          newState.checkRules = result.rules || [];
+          newState.checkRuleOperationSuccess = result.success;
+          newState.checkRuleOperationError = result.error;
+        } else if (result.action === 'create') {
+          newState.checkRules = result.rules || [];
+          newState.checkRuleOperationSuccess = result.success;
+          newState.checkRuleOperationError = result.error;
+        } else if (result.action === 'delete') {
+          newState.checkRules = result.rules || [];
+          newState.checkRuleOperationSuccess = result.success;
+          newState.checkRuleOperationError = result.error;
+        }
+
+        return newState;
       });
     }
   };
@@ -244,9 +282,7 @@ export default function App() {
    * 处理错误
    */
   const handleError = (message: HostResult) => {
-    console.log('App: handleError called with message:', message);
     const payload = message.payload;
-    console.log('App: Error payload:', payload);
 
     // 清理重试定时器
     if (retryTimerRef.current) {
@@ -260,8 +296,6 @@ export default function App() {
       code: payload?.code,
       suggestion: payload?.suggestion
     };
-
-    console.log('App: Setting error info:', errorInfo);
 
     setState(prev => ({
       ...prev,
@@ -291,7 +325,6 @@ export default function App() {
    * 处理就绪状态
    */
   const handleReady = () => {
-    console.log('DocMate UI is ready');
   };
 
   /**
@@ -425,12 +458,94 @@ export default function App() {
    * 导航到指定视图
    * @param view 要导航到的视图
    */
-  const navigateTo = (view: 'chat' | 'config') => {
+  const navigateTo = (view: 'chat' | 'config' | 'checkRules') => {
     setState(prev => ({
       ...prev,
       view
     }));
   };
+
+  /**
+   * 获取检查规则
+   */
+  const fetchCheckRules = () => {
+    setState(prev => ({ ...prev, isLoadingCheckRules: true }));
+
+    // 设置超时处理，如果10秒内没有响应，重置加载状态
+    setTimeout(() => {
+      setState(prev => {
+        if (prev.isLoadingCheckRules) {
+          return { ...prev, isLoadingCheckRules: false };
+        }
+        return prev;
+      });
+    }, 10000);
+
+    vscodeApi.postMessage({
+      command: 'checkRule',
+      payload: {
+        checkRulePayload: {
+          action: 'getAll'
+        }
+      }
+    });
+  };
+
+  /**
+   * 更新检查规则
+   */
+  const updateCheckRules = async (rules: CheckRule[]): Promise<boolean> => {
+    vscodeApi.postMessage({
+      command: 'checkRule',
+      payload: {
+        checkRulePayload: {
+          action: 'update',
+          rules
+        }
+      }
+    });
+    return true;
+  };
+
+  /**
+   * 创建检查规则
+   */
+  const createCheckRules = async (newRules: Omit<CheckRule, 'id' | 'createdAt' | 'updatedAt' | 'isDefault'>[]): Promise<boolean> => {
+    vscodeApi.postMessage({
+      command: 'checkRule',
+      payload: {
+        checkRulePayload: {
+          action: 'create',
+          rules: newRules
+        }
+      }
+    });
+    return true;
+  };
+
+  /**
+   * 删除检查规则
+   */
+  const deleteCheckRules = async (ruleIds: string[]): Promise<boolean> => {
+    const payload = {
+      checkRulePayload: {
+        action: 'delete' as const,
+        ruleIds
+      }
+    };
+    vscodeApi.postMessage({
+      command: 'checkRule',
+      payload
+    });
+    return true;
+  };
+
+  // 当导航到检查规则页面时，加载规则数据
+  useEffect(() => {
+    if (state.view === 'checkRules') {
+      fetchCheckRules();
+    }
+  }, [state.view]);
 
   if (hasError) {
     return (
@@ -498,6 +613,17 @@ export default function App() {
     switch (state.view) {
       case 'config':
         return <ConfigProvider onConfigSaved={handleConfigSaved} onBack={() => navigateTo('chat')} />;
+      case 'checkRules':
+        return (
+          <CheckRuleManager
+            checkRules={state.checkRules || []}
+            isLoading={state.isLoadingCheckRules}
+            onBack={() => navigateTo('chat')}
+            onUpdateRules={updateCheckRules}
+            onCreateRules={createCheckRules}
+            onDeleteRules={deleteCheckRules}
+          />
+        );
       case 'chat':
         return renderChatView();
       default:
@@ -514,6 +640,7 @@ export default function App() {
         hasConversations={state.conversations.length > 0}
         onAuthChange={handleAuthChange}
         onNavigateToConfig={() => navigateTo('config')}
+        onNavigateToCheckRules={() => navigateTo('checkRules')}
       />
 
       {state.errorInfo && (

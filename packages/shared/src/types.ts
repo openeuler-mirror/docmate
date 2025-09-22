@@ -9,7 +9,7 @@ export type TextSource = 'selected' | 'full';
 
 // UI发往Host的命令接口
 export interface UICommand extends BaseCommand {
-  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'clearDiagnostics' | 'refresh' | 'settings' | 'auth' | 'config' | 'cancel';
+  command: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite' | 'applySuggestion' | 'clearDiagnostics' | 'refresh' | 'settings' | 'auth' | 'config' | 'cancel' | 'checkRule';
   payload: {
     text?: string;
     textSource?: TextSource;
@@ -21,12 +21,13 @@ export interface UICommand extends BaseCommand {
     originalText?: string;
     config?: any; // 配置相关数据
     isAutoSave?: boolean; // 是否为自动保存
+    checkRulePayload?: CheckRuleCommandPayload; // 检查规则管理相关载荷
   };
 }
 
 // Host发往UI的结果接口
 export interface HostResult extends BaseCommand {
-  command: 'renderResult' | 'error' | 'loading' | 'ready' | 'auth' | 'renderCheckResult' | 'renderPolishResult' | 'renderTranslateResult' | 'renderRewriteResult' | 'config';
+  command: 'renderResult' | 'error' | 'loading' | 'ready' | 'auth' | 'renderCheckResult' | 'renderPolishResult' | 'renderTranslateResult' | 'renderRewriteResult' | 'config' | 'checkRule';
   payload?: {
     type?: 'check' | 'polish' | 'translate' | 'fullTranslate' | 'rewrite';
     data?: any;
@@ -45,6 +46,7 @@ export interface HostResult extends BaseCommand {
     message?: string;
     suggestedFileName?: string;
     success?: boolean;
+    checkRuleResult?: CheckRuleCommandResult; // 检查规则管理相关结果
   };
   result?: any;
 }
@@ -365,5 +367,40 @@ export interface DiagnosticInfo {
   original_text: string;
   suggested_text: string;
   suggestion_type: string;
+}
+
+/**
+ * 自定义检查规则
+ */
+export interface CheckRule {
+  id: string;                    // 唯一标识符 (例如: 'TYPO-001')
+  name: string;                  // 规则名称 (例如: '中文错别字检查')
+  type: 'TYPO' | 'PUNCTUATION' | 'SPACING' | 'FORMATTING' | 'STYLE' | 'HYPERLINK_ERROR' | 'TERMINOLOGY'; // 规则类型
+  description: string;           // 规则的详细描述
+  content: string;               // 规则的具体内容，将用于生成Prompt
+  enabled: boolean;              // 规则是否启用
+  isDefault: boolean;            // 是否为默认规则
+  createdAt?: string;            // 创建时间
+  updatedAt?: string;            // 更新时间
+}
+
+/**
+ * 检查规则管理相关的命令载荷
+ */
+export interface CheckRuleCommandPayload {
+  action: 'getAll' | 'update' | 'create' | 'delete';
+  rules?: Partial<CheckRule>[];
+  ruleIds?: string[];
+}
+
+/**
+ * 检查规则管理相关的结果
+ */
+export interface CheckRuleCommandResult {
+  action: 'getAll' | 'update' | 'create' | 'delete';
+  success: boolean;
+  rules?: CheckRule[];
+  error?: string;
+  message?: string;
 }
 
