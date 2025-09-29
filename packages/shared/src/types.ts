@@ -60,6 +60,11 @@ export interface Issue {
   type: 'TYPO' | 'PUNCTUATION' | 'SPACING' | 'FORMATTING' | 'STYLE' | 'CONSISTENCY' | 'HYPERLINK_ERROR' | 'TERMINOLOGY';
   original_text?: string;
   suggested_text?: string;
+  // 精确的字符位置范围
+  preciseRange?: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
 }
 
 // AI服务配置
@@ -279,15 +284,30 @@ export interface AIResult {
   modifiedText: string;
   diffs: Diff[];
   issues?: Issue[];
-  changes?: any[];
+  changes?: Array<{
+    type: 'wording' | 'grammar' | 'style' | 'clarity' | 'flow' | 'structure' | 'tone' | 'content' | 'formatting' | 'terminology';
+    original: string;
+    improved?: string;
+    rewritten?: string;
+    reason: string;
+    description?: string;
+  }>;
   summary?: string;
   explanation?: string;
   sourceLang?: string;
   targetLang?: string;
   // 可选：用于翻译结果的术语对照
-  terminology?: { original: string; translated: string; note?: string }[];
+  terminology?: Array<{
+    original: string;
+    translated: string;
+    note?: string;
+  }>;
   // 是否已处理（接受/拒绝）用于持久化隐藏 Diff
   dismissed?: boolean;
+  // 可选：处理时间（毫秒）
+  processingTime?: number;
+  // 可选：信心度
+  confidence?: number;
 }
 
 /**

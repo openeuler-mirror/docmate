@@ -212,34 +212,60 @@ export class ValidationService {
     suggestionIndex: number = 0
   ): { start: { line: number; character: number }; end: { line: number; character: number } } {
 
+    console.log('=== calculateSuggestionRange 调试信息 ===');
+    console.log('suggestion:', suggestion);
+    console.log('chunk.id:', chunk.id);
+    console.log('chunk.range:', chunk.range);
+    console.log('chunk.core_text长度:', chunk.core_text.length);
+    console.log('chunk.core_text内容:', JSON.stringify(chunk.core_text.substring(0, 200)));
+
     // 精确计算suggestion在文档中的位置
 
     const searchText = suggestion.original_text;
     const chunkText = chunk.core_text;
 
+    console.log('查找文本:', JSON.stringify(searchText));
+    console.log('chunk总长度:', chunkText.length);
+
     // 直接查找original_text在chunk中的精确位置
     let searchIndex = chunkText.indexOf(searchText);
 
+    console.log('第一次查找结果 (indexOf):', searchIndex);
+
     // 如果找不到，尝试规范化匹配（处理空格差异）
     if (searchIndex === -1) {
+      console.log('未找到精确匹配，尝试规范化匹配...');
       const normalizedChunk = chunkText.replace(/\s+/g, ' ').trim();
       const normalizedSearch = searchText.replace(/\s+/g, ' ').trim();
 
+      console.log('normalizedChunk:', JSON.stringify(normalizedChunk.substring(0, 100)));
+      console.log('normalizedSearch:', JSON.stringify(normalizedSearch));
+
       if (normalizedChunk.includes(normalizedSearch)) {
         searchIndex = this.findBestMatchPosition(chunkText, searchText);
+        console.log('最佳匹配位置:', searchIndex);
       }
     }
 
     if (searchIndex === -1) {
+      console.error('无法找到文本:', JSON.stringify(searchText));
+      console.error('chunk文本:', JSON.stringify(chunkText));
       throw new Error(`Cannot locate text "${searchText}" in chunk ${chunk.id}`);
     }
 
     // 计算精确的range
     const searchLength = searchText.length;
 
+    console.log('最终使用:');
+    console.log('- searchIndex:', searchIndex);
+    console.log('- searchLength:', searchLength);
+    console.log('- 找到的文本:', JSON.stringify(chunkText.substring(searchIndex, searchIndex + searchLength)));
+
     // 转换为文档位置
     const range = this.convertIndexToRange(chunkText, searchIndex, searchLength, chunk.range);
 
+    console.log('最终计算的range:', range);
+    console.log('=== calculateSuggestionRange 结束 ===');
     return range;
   }
 
@@ -253,6 +279,14 @@ export class ValidationService {
     chunkRange: any
   ): { start: { line: number; character: number }; end: { line: number; character: number } } {
 
+    console.log('=== convertIndexToRange 调试信息 ===');
+    console.log('输入参数:');
+    console.log('- startIndex:', startIndex);
+    console.log('- length:', length);
+    console.log('- chunkRange:', chunkRange);
+    console.log('- text长度:', text.length);
+    console.log('- text内容:', text.substring(0, 100) + '...');
+
     // 计算开始位置
     const textBeforeStart = text.substring(0, startIndex);
     const startLines = textBeforeStart.split('\n');
@@ -265,6 +299,12 @@ export class ValidationService {
     const endLines = textBeforeEnd.split('\n');
     const endLineOffset = endLines.length - 1;
     const endCharOffset = endLines[endLines.length - 1].length;
+
+    console.log('计算结果:');
+    console.log('- startLineOffset:', startLineOffset);
+    console.log('- startCharOffset:', startCharOffset);
+    console.log('- endLineOffset:', endLineOffset);
+    console.log('- endCharOffset:', endCharOffset);
 
     // 映射到文档绝对位置
     const startLine = chunkRange.start.line + startLineOffset;
@@ -284,6 +324,12 @@ export class ValidationService {
     } else {
       endCharacter = endCharOffset;
     }
+
+    console.log('最终位置:');
+    console.log('- startLine:', startLine);
+    console.log('- startCharacter:', startCharacter);
+    console.log('- endLine:', endLine);
+    console.log('- endCharacter:', endCharacter);
 
     return {
       start: { line: startLine, character: startCharacter },

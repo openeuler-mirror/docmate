@@ -16,7 +16,10 @@
   "dependencies": {
     "@docmate/shared": "workspace:*",
     "@docmate/utils": "workspace:*",
-    "diff": "^8.0.2"
+    "@langchain/core": "^0.3.77",
+    "@langchain/openai": "^0.6.13",
+    "diff": "^8.0.2",
+    "zod": "^4.1.11"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",

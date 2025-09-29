@@ -49,23 +49,26 @@ export class ActionController {
    * 初始化前端AI服务
    */
   private async initializeFrontendAIService(): Promise<void> {
-    const fullConfig = await userConfigService.getFullAIConfig();
+    // 首先检查是否有实际的用户配置（不是默认值）
+    const userConfig = await userConfigService.getAIConfig();
+    const defaultConfig = userConfigService.getDefaultConfig();
 
     let aiConfig;
-    if (fullConfig && this.isValidUserConfig(fullConfig)) {
+    if (userConfig && this.isValidUserConfig(userConfig)) {
+      // 使用实际的用户配置
       aiConfig = {
-        apiKey: fullConfig.apiKey,
-        baseUrl: fullConfig.baseUrl,
-        model: fullConfig.model,
-        timeout: fullConfig.timeout!,
-        maxRetries: fullConfig.maxRetries!
+        apiKey: userConfig.apiKey,
+        baseUrl: userConfig.baseUrl,
+        model: userConfig.model,
+        timeout: userConfig.timeout || defaultConfig.timeout!,
+        maxRetries: userConfig.maxRetries || defaultConfig.maxRetries!
       };
     } else {
+      // 回退到VS Code配置
       const vsCodeConfig = this.getAIConfig();
-      const defaultConfig = userConfigService.getDefaultConfig();
       aiConfig = {
-        apiKey: vsCodeConfig.apiKey || '',
-        baseUrl: vsCodeConfig.endpoint || '',
+        apiKey: vsCodeConfig.apiKey || defaultConfig.apiKey,
+        baseUrl: vsCodeConfig.endpoint || defaultConfig.baseUrl,
         model: vsCodeConfig.model || defaultConfig.model,
         timeout: vsCodeConfig.timeout || defaultConfig.timeout!,
         maxRetries: vsCodeConfig.maxRetries || defaultConfig.maxRetries!
@@ -224,11 +227,25 @@ export class ActionController {
             }
           }
 
-          return {
-            range: {
+          // 使用精确的字符位置范围（如果有的话）
+          let range;
+          if (issue.preciseRange) {
+            range = issue.preciseRange;
+            console.log(`使用精确位置: line ${range.start.line}-${range.end.line}, char ${range.start.character}-${range.end.character}`);
+          } else {
+            // 回退到原来的硬编码范围
+            range = {
               start: { line: startLine, character: 0 },
-              end: { line: endLine, character: 100 }
-            },
+              end: { line: endLine, character: Math.min(100, editor.document.lineAt(endLine).text.length) }
+            };
+            console.log(`使用回退位置: line ${range.start.line}-${range.end.line}, char ${range.start.character}-${range.end.character}`);
+          }
+
+          console.log(`问题文本: "${issue.original_text}"`);
+          console.log(`文档行 ${startLine} 内容: "${editor.document.lineAt(startLine).text}"`);
+
+          const diagnostic = {
+            range,
             message: issue.message,
             severity: issue.severity,
             source: 'DocMate',
@@ -237,6 +254,9 @@ export class ActionController {
             suggested_text: issue.suggested_text || '',
             suggestion_type: issue.type
           };
+
+          console.log(`最终诊断范围: line ${diagnostic.range.start.line}-${diagnostic.range.end.line}, char ${diagnostic.range.start.character}-${diagnostic.range.end.character}`);
+          return diagnostic;
         });
 
         DiagnosticService.showDiagnostics(editor.document.uri, diagnostics);
@@ -406,7 +426,7 @@ export class ActionController {
             timeout: fullConfig.testTimeout!,
             maxRetries: 1
           });
-          await testService.callAIService('Hello, this is a test message.');
+          await testService.getLangChainService().testConnection();
           return {
             action: 'test',
             success: true,
@@ -488,7 +508,7 @@ export class ActionController {
   private async handleCancel(): Promise<any> {
     try {
       if (this.frontendAIService) {
-        this.frontendAIService.cancelRequest();
+        // LangChain服务内部已处理取消逻辑，无需额外操作
       }
       return {
         action: 'cancelled',
