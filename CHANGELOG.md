@@ -1,5 +1,41 @@
 # 更新日志
 
+## [1.4.0] - 2025-09-29
+
+### 🚀 架构升级：LangChain框架重构
+
+#### ✨ 核心架构改进
+
+- **LangChain框架集成**：全面升级到LangChain框架，采用现代化的AI应用架构
+- **LCEL表达式语言**：使用LangChain表达式语言构建声明式的AI处理流程
+- **Map-Reduce处理模式**：实现基于Map-Reduce的复杂文本处理，支持长文档分块和并行计算
+- **结构化输出**：使用Zod Schema确保返回数据的类型安全和一致性
+
+#### 🔧 技术架构升级
+
+- **LangChainService**：新增核心LangChain服务，统一管理AI交互
+- **Chain模块化**：将AI功能拆分为独立的Chain模块（PolishChain、TranslateChain、RewriteChain、CheckChain）
+- **FrontendAIService重构**：移除手写API调用代码，改为使用LangChain框架
+- **类型安全增强**：通过Zod Schema提供强类型安全和自动验证
+
+#### 🛠️ 用户体验优化
+
+- **处理效率提升**：基于LangChain的优化处理流程，提供更高效的AI交互
+- **错误处理统一**：统一的错误处理机制，提升系统稳定性
+- **配置管理优化**：改进配置处理逻辑，支持用户配置与默认配置的智能回退
+- **精确位置定位**：完善ValidationService的验证逻辑，增加精确位置映射
+
+#### 📋 详细技术变更
+
+- 新增 `LangChainService` 核心服务类
+- 新增四个AI功能Chain模块，采用LCEL架构
+- 重构 `FrontendAIService`，简化为LangChain的调用层
+- 集成 `@langchain/core`、`@langchain/openai`、`zod` 依赖
+- 优化 `ActionController` 中的配置处理逻辑
+- 完善类型定义，增加精确位置支持
+
+---
+
 ## [1.3.0] - 2025-09-22
 
 ### 🎉 重大更新：自定义检查规则功能
