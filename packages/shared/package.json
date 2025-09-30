@@ -1,0 +1,22 @@
+{
+  "name": "@docmate/shared",
+  "version": "0.1.0",
+  "description": "Shared types and constants for DocMate",
+  "main": "./out/index.js",
+  "types": "./out/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "watch": "tsc -b --watch",
+    "clean": "rimraf out *.tsbuildinfo",
+    "lint": "eslint src --ext .ts",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.3.3"
+  },
+  "files": [
+    "out/**/*"
+  ]
+}

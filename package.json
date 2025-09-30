@@ -1,0 +1,148 @@
+{
+  "name": "docmate",
+  "displayName": "DocMate - openEuler Writing Assistant",
+  "description": "AI-powered intelligent writing assistant for openEuler documentation with checking, polishing, translation and rewriting features",
+  "version": "1.4.0",
+  "publisher": "DelthinYee",
+  "icon": "images/DocMate.png",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/openeuler/docmate.git"
+  },
+  "homepage": "https://gitee.com/openeuler/docmate",
+  "bugs": {
+    "url": "https://gitee.com/openeuler/docmate/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Education",
+    "Linters"
+  ],
+  "keywords": [
+    "openeuler",
+    "documentation",
+    "writing",
+    "ai",
+    "assistant",
+    "intelligent",
+    "checking",
+    "polishing",
+    "translation",
+    "rewriting",
+    "markdown",
+    "chinese",
+    "english"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onUri"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "docmate",
+          "title": "DocMate",
+          "icon": "$(book)"
+        }
+      ]
+    },
+    "views": {
+      "docmate": [
+        {
+          "id": "docmate.sidebar",
+          "name": "DocMate Assistant",
+          "type": "webview",
+          "when": "true"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "docmate.check",
+        "title": "Check Document",
+        "category": "DocMate"
+      },
+      {
+        "command": "docmate.polish",
+        "title": "Polish Text",
+        "category": "DocMate"
+      },
+      {
+        "command": "docmate.translate",
+        "title": "Translate Text",
+        "category": "DocMate"
+      },
+      {
+        "command": "docmate.rewrite",
+        "title": "Rewrite Text",
+        "category": "DocMate"
+      },
+      {
+        "command": "docmate.sidebar.focus",
+        "title": "Show DocMate Sidebar",
+        "category": "DocMate"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "docmate.check",
+          "group": "docmate"
+        },
+        {
+          "command": "docmate.polish",
+          "group": "docmate"
+        },
+        {
+          "command": "docmate.translate",
+          "group": "docmate"
+        },
+        {
+          "command": "docmate.rewrite",
+          "group": "docmate"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "echo 'Skipping prepublish - build will be done by package script'",
+    "build": "pnpm run build:deps && pnpm run bundle",
+    "build:deps": "pnpm --filter shared build && pnpm --filter utils build && pnpm --filter ui build",
+    "bundle": "node esbuild.config.js",
+    "build:extension": "pnpm --filter extension build",
+    "build:ui": "pnpm --filter ui build",
+    "dev": "pnpm run dev:extension & pnpm run dev:ui",
+    "dev:extension": "pnpm --filter extension dev",
+    "dev:ui": "pnpm --filter ui dev",
+    "watch": "pnpm run watch:extension & pnpm run watch:ui",
+    "watch:extension": "pnpm --filter extension watch",
+    "watch:ui": "pnpm --filter ui watch",
+    "watch:bundle": "node esbuild.config.js --watch",
+    "test": "pnpm --filter extension test",
+    "lint": "pnpm -r lint",
+    "type-check": "pnpm -r type-check",
+    "clean": "pnpm -r clean && rimraf dist *.vsix",
+    "package": "pnpm run build && vsce package --no-dependencies --baseContentUrl https://gitee.com/openeuler/docmate/raw/main/",
+    "publish": "pnpm run build && vsce publish --no-dependencies --baseContentUrl https://gitee.com/openeuler/docmate/raw/main/"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.25.8",
+    "eslint": "^8.56.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.3.3"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "packageManager": "pnpm@8.15.0"
+}
