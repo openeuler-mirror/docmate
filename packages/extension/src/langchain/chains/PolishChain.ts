@@ -1,6 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { z } from 'zod';
+import { LangChainService, StructuredOutputMethod } from '../LangChainService';
 
 /**
  * 文本润色功能的完整实现
@@ -84,20 +85,52 @@ function createPolishPromptTemplate(
  */
 export class PolishChain {
   private chain: any;
+  private structuredModel: any;
+  private method: StructuredOutputMethod;
+  private focusOn: keyof typeof FOCUS_DESCRIPTIONS;
+  private targetAudience: keyof typeof AUDIENCE_DESCRIPTIONS;
+  private initialized: boolean = false;
 
   constructor(
-    private model: ChatOpenAI,
+    private langChainService: LangChainService,
     focusOn: keyof typeof FOCUS_DESCRIPTIONS = 'all',
     targetAudience: keyof typeof AUDIENCE_DESCRIPTIONS = 'technical'
   ) {
-    // 创建带结构化输出的模型
-    const structuredModel = this.model.withStructuredOutput(PolishSchema);
+    this.focusOn = focusOn;
+    this.targetAudience = targetAudience;
+  }
 
-    // 创建提示词模板
-    const prompt = createPolishPromptTemplate(focusOn, targetAudience);
+  /**
+   * 确保链已初始化
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initializeChain();
+    }
+  }
 
-    // 构建LCEL链：prompt -> model
-    this.chain = prompt.pipe(structuredModel);
+  /**
+   * 初始化链，支持动态模型选择
+   */
+  private async initializeChain(): Promise<void> {
+    try {
+      // 创建动态结构化模型
+      const { model, method } = await this.langChainService.createStructuredModel(PolishSchema);
+      this.structuredModel = model;
+      this.method = method;
+
+      // 创建提示词模板
+      const prompt = createPolishPromptTemplate(this.focusOn, this.targetAudience);
+
+      // 构建LCEL链：prompt -> model
+      this.chain = prompt.pipe(this.structuredModel);
+      this.initialized = true;
+
+      console.log(`PolishChain initialized with method: ${method}`);
+    } catch (error) {
+      console.error('Failed to initialize PolishChain:', error);
+      throw error;
+    }
   }
 
   /**
@@ -105,6 +138,7 @@ export class PolishChain {
    */
   async invoke(text: string): Promise<PolishResult> {
     try {
+      await this.ensureInitialized();
       const result = await this.chain.invoke({ text });
       return result;
     } catch (error) {
@@ -117,6 +151,7 @@ export class PolishChain {
    */
   async batch(texts: string[]): Promise<PolishResult[]> {
     try {
+      await this.ensureInitialized();
       const results = await Promise.all(
         texts.map(text => this.invoke(text))
       );
@@ -124,5 +159,20 @@ export class PolishChain {
     } catch (error) {
       throw new Error(`批量文本润色失败: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * 获取当前使用的方法
+   */
+  getMethod(): StructuredOutputMethod {
+    return this.method;
+  }
+
+  /**
+   * 重新初始化链（用于配置更新后）
+   */
+  async reinitialize(): Promise<void> {
+    this.initialized = false;
+    await this.ensureInitialized();
   }
 }
