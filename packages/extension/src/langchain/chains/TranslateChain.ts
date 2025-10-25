@@ -1,6 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { z } from 'zod';
+import { LangChainService, StructuredOutputMethod } from '../LangChainService';
 
 /**
  * 文本翻译功能的完整实现
@@ -89,21 +90,51 @@ function createTranslatePromptTemplate(
  */
 export class TranslateChain {
   private chain: any;
+  private structuredModel: any;
+  private method: StructuredOutputMethod;
+  private targetLanguage: string;
+  private sourceLanguage: string;
+  private preserveTerminology: boolean;
+  private initialized: boolean = false;
 
   constructor(
-    private model: ChatOpenAI,
+    private langChainService: LangChainService,
     targetLanguage: string = 'en',
     sourceLanguage: string = 'auto',
     preserveTerminology: boolean = true
   ) {
-    // 创建带结构化输出的模型
-    const structuredModel = this.model.withStructuredOutput(TranslateSchema);
+    this.targetLanguage = targetLanguage;
+    this.sourceLanguage = sourceLanguage;
+    this.preserveTerminology = preserveTerminology;
+  }
 
-    // 创建提示词模板
-    const prompt = createTranslatePromptTemplate(targetLanguage, sourceLanguage, preserveTerminology);
+  /**
+   * 确保链已初始化
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initializeChain();
+    }
+  }
 
-    // 构建LCEL链：prompt -> model
-    this.chain = prompt.pipe(structuredModel);
+  /**
+   * 初始化链
+   */
+  private async initializeChain(): Promise<void> {
+    try {
+      const { model, method } = await this.langChainService.createStructuredModel(TranslateSchema);
+      this.structuredModel = model;
+      this.method = method;
+
+      const prompt = createTranslatePromptTemplate(this.targetLanguage, this.sourceLanguage, this.preserveTerminology);
+      this.chain = prompt.pipe(this.structuredModel);
+      this.initialized = true;
+
+      console.log(`TranslateChain initialized with method: ${method}`);
+    } catch (error) {
+      console.error('Failed to initialize TranslateChain:', error);
+      throw error;
+    }
   }
 
   /**
@@ -111,6 +142,7 @@ export class TranslateChain {
    */
   async invoke(text: string, context: string = ''): Promise<TranslateResult> {
     try {
+      await this.ensureInitialized();
       const result = await this.chain.invoke({
         text,
         context: context || '无特定上下文'
@@ -126,6 +158,7 @@ export class TranslateChain {
    */
   async batch(items: Array<{ text: string; context?: string }>): Promise<TranslateResult[]> {
     try {
+      await this.ensureInitialized();
       const results = await Promise.all(
         items.map(item => this.invoke(item.text, item.context))
       );
@@ -133,5 +166,20 @@ export class TranslateChain {
     } catch (error) {
       throw new Error(`批量文本翻译失败: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * 获取当前使用的方法
+   */
+  getMethod(): StructuredOutputMethod {
+    return this.method;
+  }
+
+  /**
+   * 重新初始化链（用于配置更新后）
+   */
+  async reinitialize(): Promise<void> {
+    this.initialized = false;
+    await this.ensureInitialized();
   }
 }

@@ -1,10 +1,7 @@
-import { AuthStatus } from './AuthStatus';
-
 interface CompactHeaderProps {
   onClear: () => void;
   onRefresh: () => void;
   hasConversations: boolean;
-  onAuthChange: (isAuthenticated: boolean) => void;
   onNavigateToConfig: () => void;
   onNavigateToCheckRules?: () => void;
 }
@@ -13,7 +10,6 @@ export function CompactHeader({
   onClear,
   onRefresh,
   hasConversations,
-  onAuthChange,
   onNavigateToConfig,
   onNavigateToCheckRules,
 }: CompactHeaderProps) {
@@ -22,11 +18,7 @@ export function CompactHeader({
       <div className="header-left">
         <h2 className="app-title">DocMate</h2>
       </div>
-      
-      <div className="header-center">
-        <AuthStatus onAuthChange={onAuthChange} />
-      </div>
-      
+
       <div className="header-right">
         {hasConversations && (
           <button

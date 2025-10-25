@@ -40,7 +40,6 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
 }
 
 .app-title {
@@ -61,16 +60,12 @@ body {
   font-style: italic;
 }
 
-.header-center {
-  flex: 2;
-  display: flex;
-  justify-content: center;
-}
 
 .header-right {
   display: flex;
   gap: 4px;
   align-items: center;
+  margin-left: auto;
 }
 
 .header-action-button {
@@ -1055,149 +1050,6 @@ body {
 
 /* ChatView特有的消息样式已移除，使用新的气泡式Message组件样式 */
 
-/* 认证状态样式 - 紧凑型 */
-.auth-status {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: none;
-  font-size: 11px;
-  border: none;
-}
-
-.auth-status.loading {
-  justify-content: center;
-  gap: 4px;
-}
-
-.auth-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--vscode-progressBar-background);
-  border-top: 2px solid var(--vscode-progressBar-foreground);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-.auth-status.authenticated {
-  color: var(--vscode-statusBar-foreground);
-}
-
-.auth-status.not-authenticated {
-  color: var(--vscode-errorForeground);
-  flex-direction: row;
-  gap: 4px;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  flex: 1;
-}
-
-.user-info:hover {
-  opacity: 0.8;
-}
-
-.user-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.user-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.username {
-  font-weight: 500;
-  color: var(--vscode-foreground);
-}
-
-.user-email {
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-}
-
-.auth-button {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.auth-button.login {
-  background-color: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-}
-
-.auth-button.login:hover {
-  background-color: var(--vscode-button-hoverBackground);
-}
-
-.auth-button.logout {
-  background-color: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-}
-
-.auth-button.logout:hover {
-  background-color: var(--vscode-button-secondaryHoverBackground);
-}
-
-.auth-message {
-  color: var(--vscode-descriptionForeground);
-  text-align: center;
-  margin-bottom: 4px;
-}
-
-/* 认证提示样式 */
-.auth-required-notice {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background-color: var(--vscode-editor-background);
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 4px;
-  margin-bottom: 16px;
-}
-
-.notice-icon {
-  font-size: 20px;
-  flex-shrink: 0;
-}
-
-.notice-text {
-  flex: 1;
-}
-
-.notice-title {
-  font-weight: 500;
-  color: var(--vscode-foreground);
-  margin-bottom: 2px;
-}
-
-.notice-description {
-  font-size: 12px;
-  color: var(--vscode-descriptionForeground);
-}
 
 /* 修改说明样式 - 紧凑版 */
 .changes-section {

@@ -1,6 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { z } from 'zod';
+import { LangChainService, StructuredOutputMethod } from '../LangChainService';
 
 /**
  * 文本重写功能的完整实现
@@ -64,19 +65,45 @@ function createRewritePromptTemplate(
  */
 export class RewriteChain {
   private chain: any;
+  private structuredModel: any;
+  private method: StructuredOutputMethod;
+  private preserveTerminology: boolean;
+  private initialized: boolean = false;
 
   constructor(
-    private model: ChatOpenAI,
+    private langChainService: LangChainService,
     preserveTerminology: boolean = true
   ) {
-    // 创建带结构化输出的模型
-    const structuredModel = this.model.withStructuredOutput(RewriteSchema);
+    this.preserveTerminology = preserveTerminology;
+  }
 
-    // 创建提示词模板
-    const prompt = createRewritePromptTemplate(preserveTerminology);
+  /**
+   * 确保链已初始化
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initializeChain();
+    }
+  }
 
-    // 构建LCEL链：prompt -> model
-    this.chain = prompt.pipe(structuredModel);
+  /**
+   * 初始化链
+   */
+  private async initializeChain(): Promise<void> {
+    try {
+      const { model, method } = await this.langChainService.createStructuredModel(RewriteSchema);
+      this.structuredModel = model;
+      this.method = method;
+
+      const prompt = createRewritePromptTemplate(this.preserveTerminology);
+      this.chain = prompt.pipe(this.structuredModel);
+      this.initialized = true;
+
+      console.log(`RewriteChain initialized with method: ${method}`);
+    } catch (error) {
+      console.error('Failed to initialize RewriteChain:', error);
+      throw error;
+    }
   }
 
   /**
@@ -84,6 +111,7 @@ export class RewriteChain {
    */
   async invoke(text: string, instruction: string): Promise<RewriteResult> {
     try {
+      await this.ensureInitialized();
       const result = await this.chain.invoke({
         text,
         instruction
@@ -99,6 +127,7 @@ export class RewriteChain {
    */
   async batch(items: Array<{ text: string; instruction: string }>): Promise<RewriteResult[]> {
     try {
+      await this.ensureInitialized();
       const results = await Promise.all(
         items.map(item => this.invoke(item.text, item.instruction))
       );
@@ -106,5 +135,20 @@ export class RewriteChain {
     } catch (error) {
       throw new Error(`批量文本重写失败: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  /**
+   * 获取当前使用的方法
+   */
+  getMethod(): StructuredOutputMethod {
+    return this.method;
+  }
+
+  /**
+   * 重新初始化链（用于配置更新后）
+   */
+  async reinitialize(): Promise<void> {
+    this.initialized = false;
+    await this.ensureInitialized();
   }
 }

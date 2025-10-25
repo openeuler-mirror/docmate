@@ -1,5 +1,69 @@
 # 更新日志
 
+## [1.4.2] - 2025-10-21
+
+### 🚀 架构升级：动态模型兼容性解决方案
+
+#### 🔧 核心技术突破
+
+- **动态模型能力检测**：实现运行时自动测试模型支持的JSON mode和function calling能力，彻底解决"Json mode is not supported for this model"错误
+- **智能方法选择**：根据模型测试结果自动选择最佳结构化输出方法（json_mode > function_calling > text_fallback）
+- **三层回退策略**：提供完整的兼容性保障，确保在任何模型上都能正常工作
+- **特殊配置自动适配**：为DeepSeek等需要特殊配置的模型自动添加必要参数
+
+#### 🛠️ 技术架构重构
+
+- **LangChainService能力扩展**：新增`detectModelCapabilities()`、`createStructuredModel()`等核心方法
+- **Chain模块异步初始化**：重构所有Chain支持延迟初始化，适配动态模型选择
+- **模型能力缓存机制**：避免重复测试，提升性能表现
+- **配置更新缓存重置**：确保配置变更后模型能力的及时重新检测
+
+#### 🔍 代码质量优化
+
+- **统一初始化模式**：所有Chain采用一致的异步初始化架构
+- **错误处理增强**：提供详细的测试结果和错误信息，便于调试
+- **类型安全提升**：新增StructuredOutputMethod类型定义
+- **调试支持完善**：为所有Chain新增getMethod()和reinitialize()方法
+
+#### 📋 详细技术变更
+
+- 新增 `ModelCapabilityResult` 接口，定义模型能力检测数据结构
+- 实现 `createTextFallbackModel()` 方法，提供文本解析兜底方案
+- 为DeepSeek模型自动添加`enable_thinking: false`配置参数
+- 重构 PolishChain、CheckChain、TranslateChain、RewriteChain 的构造函数
+- 实现模型能力检测结果缓存，避免重复测试开销
+- 新增`zodSchemaToJsonExample()`辅助函数，支持文本回退模式
+
+---
+
+## [1.4.1] - 2025-10-15
+
+### 🛠️ 用户体验优化
+
+#### 🔧 界面优化改进
+
+- **移除登录功能**：删除了所有登录相关的UI组件和逻辑，简化用户使用流程
+- **界面布局重新设计**：优化头部布局，移除中间登录区域，采用更简洁的左侧标题+右侧按钮布局
+- **一键使用AI功能**：用户现在可以直接使用所有AI功能，无需任何登录步骤
+
+#### 🧹 代码清理优化
+
+- **AuthStatus组件简化**：移除登录状态管理逻辑，保留空组件以避免编译错误
+- **CompactHeader组件优化**：删除认证相关参数和UI元素，简化组件结构
+- **App.tsx清理**：移除isAuthenticated状态和handleAuthChange函数，精简状态管理
+- **InputPanel组件简化**：删除authRequired参数和认证提示UI
+- **CSS样式清理**：移除所有认证相关的CSS样式，优化布局样式
+
+#### 📋 详细技术变更
+
+- 移除 `packages/ui/src/components/AuthStatus.tsx` 中的登录逻辑
+- 简化 `packages/ui/src/components/CompactHeader.tsx` 组件结构
+- 清理 `packages/ui/src/App.tsx` 中的认证状态管理
+- 优化 `packages/ui/src/components/InputPanel.tsx` 组件接口
+- 更新 `packages/ui/src/App.css` 样式，调整Header布局
+
+---
+
 ## [1.4.0] - 2025-09-29
 
 ### 🚀 架构升级：LangChain框架重构

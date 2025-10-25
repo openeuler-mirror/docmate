@@ -22,7 +22,6 @@ interface AppState {
   operationState: OperationState;
   selectedText: string;
   settings: any;
-  isAuthenticated: boolean;
   isConfigured: boolean;
   isCheckingConfig: boolean;
   view: 'chat' | 'config' | 'checkRules';
@@ -49,7 +48,6 @@ export default function App() {
     },
     selectedText: '',
     settings: null,
-    isAuthenticated: true, // 默认允许使用AI功能，不需要登录
     isConfigured: false, // 默认未配置，需要检查
     isCheckingConfig: true, // 正在检查配置状态
     view: 'chat',
@@ -64,14 +62,7 @@ export default function App() {
   const [userConfig, setUserConfig] = useState({ maxRetries: 3, timeout: 60000 });
   const retryTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 处理认证状态变化
-  const handleAuthChange = (isAuthenticated: boolean) => {
-    setState(prev => ({
-      ...prev,
-      isAuthenticated
-    }));
-  };
-
+  
   useEffect(() => {
     try {
       // 监听来自扩展的消息
@@ -600,8 +591,7 @@ export default function App() {
             selectedText={state.selectedText}
             onExecute={executeOperation}
             disabled={state.operationState.isLoading}
-            authRequired={false}
-          />
+                      />
         </>
       );
     }
@@ -638,7 +628,6 @@ export default function App() {
         onClear={clearConversations}
         onRefresh={refresh}
         hasConversations={state.conversations.length > 0}
-        onAuthChange={handleAuthChange}
         onNavigateToConfig={() => navigateTo('config')}
         onNavigateToCheckRules={() => navigateTo('checkRules')}
       />

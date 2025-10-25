@@ -5,6 +5,7 @@ import { z } from 'zod';
 import * as vscode from 'vscode';
 import { TextChunk, Issue, CheckRule, Suggestion, CheckResultPayload } from '@docmate/shared';
 import { ChunkerService } from '../../services/ChunkerService';
+import { LangChainService, StructuredOutputMethod } from '../LangChainService';
 
 /**
  * 文本检查功能的完整实现
@@ -199,38 +200,62 @@ export class CheckChain {
   private chain: any;
   private customRules: CheckRule[] = [];
   private structuredModel: any;
+  private method: StructuredOutputMethod;
+  private initialized: boolean = false;
 
   constructor(
-    private model: ChatOpenAI,
+    private langChainService: LangChainService,
     private checkRules: CheckRule[] = []
   ) {
     this.customRules = checkRules;
-    this.structuredModel = this.createStructuredModel();
-    this.chain = this.createSimplifiedChain();
+  }
+
+  /**
+   * 确保链已初始化
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initializeChain();
+    }
+  }
+
+  /**
+   * 初始化链
+   */
+  private async initializeChain(): Promise<void> {
+    try {
+      this.structuredModel = await this.createStructuredModel();
+      this.chain = this.createSimplifiedChain();
+      this.initialized = true;
+      console.log(`CheckChain initialized with method: ${this.method}`);
+    } catch (error) {
+      console.error('Failed to initialize CheckChain:', error);
+      throw error;
+    }
   }
 
   /**
    * 创建结构化模型实例
    */
-  private createStructuredModel() {
-    return this.model.withStructuredOutput(
-      z.object({
+  private async createStructuredModel(): Promise<any> {
+    const schema = z.object({
+      chunk_id: z.string().describe('被检查的文本块的唯一标识符'),
+      suggestions: z.array(z.object({
         chunk_id: z.string().describe('被检查的文本块的唯一标识符'),
-        suggestions: z.array(z.object({
-          chunk_id: z.string().describe('被检查的文本块的唯一标识符'),
-          type: z.enum(['TYPO', 'PUNCTUATION', 'SPACING', 'FORMATTING', 'STYLE', 'HYPERLINK_ERROR', 'TERMINOLOGY']).describe('问题类型'),
-          description: z.string().describe('对问题的简短描述'),
-          original_text: z.string().describe('核心文本中的错误部分'),
-          suggested_text: z.string().describe('修改后的正确文本'),
-          severity: z.enum(['error', 'warning', 'info']).describe('严重程度')
-        })).describe('问题建议数组'),
-        summary: z.string().optional().describe('检查总结'),
-        confidence: z.number().min(0).max(1).optional().describe('检查信心度')
-      }).describe('返回文本块检查的结构化结果'),
-      {
-        name: 'return_chunk_check_result'
-      }
-    );
+        type: z.enum(['TYPO', 'PUNCTUATION', 'SPACING', 'FORMATTING', 'STYLE', 'HYPERLINK_ERROR', 'TERMINOLOGY']).describe('问题类型'),
+        description: z.string().describe('对问题的简短描述'),
+        original_text: z.string().describe('核心文本中的错误部分'),
+        suggested_text: z.string().describe('修改后的正确文本'),
+        severity: z.enum(['error', 'warning', 'info']).describe('严重程度')
+      })).describe('问题建议数组'),
+      summary: z.string().optional().describe('检查总结'),
+      confidence: z.number().min(0).max(1).optional().describe('检查信心度')
+    }).describe('返回文本块检查的结构化结果');
+
+    const { model, method } = await this.langChainService.createStructuredModel(schema);
+    this.method = method;
+
+    return model;
   }
 
   /**
@@ -381,6 +406,7 @@ export class CheckChain {
    */
   async invoke(text: string, selectionRange?: vscode.Range): Promise<CheckResult> {
     try {
+      await this.ensureInitialized();
       const result = await this.chain.invoke({ text, selectionRange });
       return result;
     } catch (error) {
@@ -391,9 +417,24 @@ export class CheckChain {
   /**
    * 更新自定义检查规则
    */
-  updateCustomRules(rules: CheckRule[]): void {
+  async updateCustomRules(rules: CheckRule[]): Promise<void> {
     this.customRules = rules;
-    this.structuredModel = this.createStructuredModel();
-    this.chain = this.createSimplifiedChain();
+    this.initialized = false;
+    await this.ensureInitialized();
+  }
+
+  /**
+   * 获取当前使用的方法
+   */
+  getMethod(): StructuredOutputMethod {
+    return this.method;
+  }
+
+  /**
+   * 重新初始化链（用于配置更新后）
+   */
+  async reinitialize(): Promise<void> {
+    this.initialized = false;
+    await this.ensureInitialized();
   }
 }
